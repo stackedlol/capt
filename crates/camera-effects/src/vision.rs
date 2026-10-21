@@ -14,8 +14,16 @@ pub mod stage_stats {
     use std::sync::Mutex;
     use std::time::Instant;
 
-    pub const NAMES: [&str; 6] = [
-        "transfer", "perform", "extract", "motion", "finish", "total",
+    pub const NAMES: [&str; 9] = [
+        "transfer",
+        "perform",
+        "extract",
+        "motion",
+        "finish",
+        "total",
+        "histogram",
+        "generate",
+        "read",
     ];
     pub static STATS: Mutex<[(u64, u64, u64); 9]> = Mutex::new([(0, 0, 0); 9]);
     pub static DIMS: Mutex<((u32, u32), (u32, u32))> = Mutex::new(((0, 0), (0, 0)));
