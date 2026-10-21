@@ -35,6 +35,8 @@ jobs:
         shell: bash
         run: |
           set +e
+          cargo +1.95.0 test --manifest-path apps/desktop-gpui/Cargo.toml --locked --target aarch64-apple-darwin \
+            --config 'profile.dev.package.cap-desktop-gpui.opt-level=2' --bin cap-gpui --no-run
           exe=$(cargo +1.95.0 test --manifest-path apps/desktop-gpui/Cargo.toml --locked --target aarch64-apple-darwin \
             --config 'profile.dev.package.cap-desktop-gpui.opt-level=2' --bin cap-gpui --no-run --message-format=json \
             | jq -r 'select(.executable != null) | .executable' | tail -1)
