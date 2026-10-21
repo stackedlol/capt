@@ -600,6 +600,89 @@ fn vision_input_size_quality() {
     }
 }
 
+#[repr(C)]
+#[derive(Default)]
+struct TaskVmInfo {
+    virtual_size: u64,
+    region_count: i32,
+    page_size: i32,
+    resident_size: u64,
+    resident_size_peak: u64,
+    device: u64,
+    device_peak: u64,
+    internal: u64,
+    internal_peak: u64,
+    external: u64,
+    external_peak: u64,
+    reusable: u64,
+    reusable_peak: u64,
+    purgeable_volatile_pmap: u64,
+    purgeable_volatile_resident: u64,
+    purgeable_volatile_virtual: u64,
+    compressed: u64,
+    compressed_peak: u64,
+    compressed_lifetime: u64,
+    phys_footprint: u64,
+    min_address: u64,
+    max_address: u64,
+    ledger_phys_footprint_peak: i64,
+    ledger_purgeable_nonvolatile: i64,
+    ledger_purgeable_novolatile_compressed: i64,
+    ledger_purgeable_volatile: i64,
+    ledger_purgeable_volatile_compressed: i64,
+    ledger_tag_network_nonvolatile: i64,
+    ledger_tag_network_nonvolatile_compressed: i64,
+    ledger_tag_network_volatile: i64,
+    ledger_tag_network_volatile_compressed: i64,
+    ledger_tag_media_footprint: i64,
+    ledger_tag_media_footprint_compressed: i64,
+    ledger_tag_media_nofootprint: i64,
+    ledger_tag_media_nofootprint_compressed: i64,
+    ledger_tag_graphics_footprint: i64,
+    ledger_tag_graphics_footprint_compressed: i64,
+    ledger_tag_graphics_nofootprint: i64,
+    ledger_tag_graphics_nofootprint_compressed: i64,
+    ledger_tag_neural_footprint: i64,
+    ledger_tag_neural_footprint_compressed: i64,
+    ledger_tag_neural_nofootprint: i64,
+    ledger_tag_neural_nofootprint_compressed: i64,
+    limit_bytes_remaining: u64,
+    decompressions: i32,
+    ledger_swapins: i32,
+    ledger_tag_neural_nofootprint_total: i64,
+    ledger_tag_neural_nofootprint_peak: i64,
+}
+
+unsafe extern "C" {
+    fn task_info(task: libc::mach_port_t, flavor: u32, info: *mut i32, count: *mut u32) -> i32;
+}
+
+fn vm_breakdown() -> String {
+    let mut info = TaskVmInfo::default();
+    let mut count = (std::mem::size_of::<TaskVmInfo>() / 4) as u32;
+    let result = unsafe {
+        task_info(
+            libc::mach_task_self(),
+            22,
+            (&mut info as *mut TaskVmInfo).cast(),
+            &mut count,
+        )
+    };
+    let mb = |value: i64| value as f64 / 1_048_576.0;
+    format!(
+        "kr={result} footprint {:.0} internal {:.0} compressed {:.0} graphics {:.0} neural {:.0} neural_nofootprint {:.0} media {:.0} purgeable_nonvolatile {:.0} iokit/device {:.0}",
+        mb(info.phys_footprint as i64),
+        mb(info.internal as i64),
+        mb(info.compressed as i64),
+        mb(info.ledger_tag_graphics_footprint),
+        mb(info.ledger_tag_neural_footprint),
+        mb(info.ledger_tag_neural_nofootprint),
+        mb(info.ledger_tag_media_footprint),
+        mb(info.ledger_purgeable_nonvolatile),
+        mb(info.device as i64),
+    )
+}
+
 #[test]
 #[ignore = "scratch: footprint at each stage of bringing the effect up"]
 fn footprint_stages() {
@@ -608,7 +691,11 @@ fn footprint_stages() {
     let mut last = footprint_mb();
     let mut stage = |name: &str| {
         let now = footprint_mb();
-        println!("footprint {name}: {now:.0} MB ({:+.0})", now - last);
+        println!(
+            "footprint {name}: {now:.0} MB ({:+.0}) | {}",
+            now - last,
+            vm_breakdown()
+        );
         last = now;
     };
     stage("start (frames built)");
