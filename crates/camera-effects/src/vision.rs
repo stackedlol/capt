@@ -63,6 +63,30 @@ pub mod stage_stats {
     }
 }
 
+pub fn trace_footprint(label: &str) {
+    static SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    if std::env::var("CAP_BENCH_TRACE_FOOTPRINT").is_err() {
+        return;
+    }
+    let mut seen = SEEN.lock().unwrap();
+    if seen.iter().filter(|seen| *seen == label).count() >= 2 {
+        return;
+    }
+    seen.push(label.to_string());
+    let mut info: libc::rusage_info_v2 = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::proc_pid_rusage(
+            libc::getpid(),
+            libc::RUSAGE_INFO_V2,
+            (&mut info as *mut libc::rusage_info_v2).cast(),
+        )
+    };
+    eprintln!(
+        "trace {label}: {:.0} MB",
+        info.ri_phys_footprint as f64 / 1_048_576.0
+    );
+}
+
 pub fn vision_stage_report() -> String {
     stage_stats::take_report()
 }
@@ -405,6 +429,7 @@ impl Session {
                     Some(input) if input.width() == width && input.height() == height => input,
                     slot => slot.insert(create_input(width, height)?),
                 };
+                trace_footprint("vision before transfer");
                 stage_stats::timed(0, || transfer.transfer(&buffer.0, input))
                     .map_err(|error| format!("copy segmentation frame: {error:?}"))?;
                 input.clone()
@@ -456,10 +481,14 @@ impl Session {
     }
 
     fn analyse(&mut self, input: &cv::PixelBuf, job: &mut VisionJob) -> Result<(), String> {
+        trace_footprint("vision before perform");
         let requests = ns::Array::<vn::Request>::from_slice(&[self.request.as_request()]);
         stage_stats::timed(1, || self.handler.perform_on_cv_pixel_buf(&requests, input))
             .map_err(|error| format!("Vision person segmentation failed: {error:?}"))?;
-        stage_stats::timed(2, || self.extract(job))
+        trace_footprint("vision after perform");
+        let result = stage_stats::timed(2, || self.extract(job));
+        trace_footprint("vision after extract");
+        result
     }
 
     fn extract(&mut self, job: &mut VisionJob) -> Result<(), String> {

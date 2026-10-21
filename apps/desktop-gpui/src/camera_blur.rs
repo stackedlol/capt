@@ -259,7 +259,9 @@ impl Worker {
     ) -> anyhow::Result<BlurOutput> {
         let mode = job.mode;
         let (width, height) = (job.width, job.height);
+        cap_camera_effects::trace_footprint("worker start");
         let texture = self.input_texture(&job)?.clone();
+        cap_camera_effects::trace_footprint("worker imported input");
 
         // Vision takes the converted IOSurface directly (no GPU readback),
         // and segmentation runs beside rendering instead of blocking it.
@@ -276,6 +278,7 @@ impl Worker {
             &mut encoder,
             mode,
         );
+        cap_camera_effects::trace_footprint("worker encoded effect");
         let output = self
             .processor
             .process_returning_output()
@@ -293,11 +296,13 @@ impl Worker {
                 30,
             ))
             .map_err(|error| anyhow!("{error}"))?;
+        cap_camera_effects::trace_footprint("worker encoded bgra");
         let submission = self.queue.submit(std::iter::once(encoder.finish()));
 
         let frame = runtime
             .block_on(pending.wait(&self.device, submission))
             .map_err(|error| anyhow!("{error}"))?;
+        cap_camera_effects::trace_footprint("worker gpu done");
         let cutout = if mode == cap_camera_effects::BlurMode::Remove {
             use core_foundation::base::TCFType as _;
             use core_video::pixel_buffer::{CVPixelBuffer, CVPixelBufferRef};

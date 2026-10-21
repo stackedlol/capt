@@ -24,7 +24,7 @@ pub fn onnx_runtime_library_path() -> Option<std::path::PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
-pub use vision::vision_stage_report;
+pub use vision::{trace_footprint, vision_stage_report};
 
 pub fn initialize_onnx_runtime() -> anyhow::Result<()> {
     segmentation::init_runtime()
