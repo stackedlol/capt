@@ -17,7 +17,7 @@ pub mod stage_stats {
     pub const NAMES: [&str; 6] = [
         "transfer", "perform", "extract", "motion", "finish", "total",
     ];
-    pub static STATS: Mutex<[(u64, u64, u64); 6]> = Mutex::new([(0, 0, 0); 6]);
+    pub static STATS: Mutex<[(u64, u64, u64); 9]> = Mutex::new([(0, 0, 0); 9]);
     pub static DIMS: Mutex<((u32, u32), (u32, u32))> = Mutex::new(((0, 0), (0, 0)));
 
     pub fn thread_cpu_ns() -> u64 {
