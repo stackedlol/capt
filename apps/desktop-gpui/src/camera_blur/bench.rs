@@ -325,6 +325,7 @@ fn run(
         if index == WARMUP_FRAMES {
             footprint_steady = footprint_mb();
             window = Some((Instant::now(), process_cpu_ns(), threads()));
+            let _ = cap_camera_effects::vision_stage_report();
         }
         std::thread::sleep(next_tick.saturating_duration_since(Instant::now()));
         next_tick += interval;
@@ -355,6 +356,7 @@ fn run(
         }
     }
     let (window_start, cpu_start, threads_start) = window.unwrap();
+    println!("{label}: {}", cap_camera_effects::vision_stage_report());
     let wall = window_start.elapsed();
     let cpu_percent = (process_cpu_ns() - cpu_start) as f64 / wall.as_nanos() as f64 * 100.0;
     let mut by_label: HashMap<&'static str, u64> = HashMap::new();
@@ -566,6 +568,34 @@ fn effect_output_matches_reference() {
         } else {
             std::fs::write(path, first.concat()).unwrap();
             println!("reference written to {}", path.display());
+        }
+    }
+}
+
+#[test]
+#[ignore = "scratch: Vision input size against the shipped 960x540"]
+fn vision_input_size_quality() {
+    let photos = images();
+    let frames = camera_frames(&photos, 1920, 1080);
+    let count = 90;
+    let caps = std::env::var("CAP_SEG_CANDIDATES")
+        .unwrap_or_else(|_| "960x540,1280x720,768x432,640x360,512x288,384x216".into());
+    for mode in [BlurMode::Remove, BlurMode::Heavy] {
+        unsafe { std::env::set_var("CAP_SEG_MAX_INPUT", "960x540") };
+        let _ = cap_camera_effects::vision_stage_report();
+        let reference = synchronous_outputs(&frames, mode, count);
+        println!(
+            "{mode:?} 960x540 reference: {}",
+            cap_camera_effects::vision_stage_report()
+        );
+        for cap in caps.split(',') {
+            unsafe { std::env::set_var("CAP_SEG_MAX_INPUT", cap) };
+            let outputs = synchronous_outputs(&frames, mode, count);
+            println!(
+                "{mode:?} {cap}: {} || {}",
+                compare(&reference, &outputs),
+                cap_camera_effects::vision_stage_report()
+            );
         }
     }
 }

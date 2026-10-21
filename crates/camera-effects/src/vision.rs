@@ -10,6 +10,55 @@ use crate::mask_refinement::MaskRefiner;
 /// same mask as the full 1080p frame while halving the readback.
 pub const MAX_INPUT_DIMENSIONS: (u32, u32) = (960, 540);
 
+pub mod stage_stats {
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    pub const NAMES: [&str; 6] = [
+        "transfer", "perform", "extract", "motion", "finish", "total",
+    ];
+    pub static STATS: Mutex<[(u64, u64, u64); 6]> = Mutex::new([(0, 0, 0); 6]);
+    pub static DIMS: Mutex<((u32, u32), (u32, u32))> = Mutex::new(((0, 0), (0, 0)));
+
+    pub fn thread_cpu_ns() -> u64 {
+        let mut time: libc::timespec = unsafe { std::mem::zeroed() };
+        unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
+        time.tv_sec as u64 * 1_000_000_000 + time.tv_nsec as u64
+    }
+
+    pub fn timed<R>(stage: usize, body: impl FnOnce() -> R) -> R {
+        let cpu = thread_cpu_ns();
+        let wall = Instant::now();
+        let result = body();
+        let mut stats = STATS.lock().unwrap();
+        stats[stage].0 += wall.elapsed().as_nanos() as u64;
+        stats[stage].1 += thread_cpu_ns() - cpu;
+        stats[stage].2 += 1;
+        result
+    }
+
+    pub fn take_report() -> String {
+        let mut stats = STATS.lock().unwrap();
+        let dims = *DIMS.lock().unwrap();
+        let mut out = format!("vision input {:?} mask {:?} |", dims.0, dims.1);
+        for (name, (wall, cpu, count)) in NAMES.iter().zip(stats.iter()) {
+            if *count > 0 {
+                out += &format!(
+                    " {name} {:.2}/{:.2}ms (wall/cpu, n={count})",
+                    *wall as f64 / *count as f64 / 1e6,
+                    *cpu as f64 / *count as f64 / 1e6
+                );
+            }
+        }
+        *stats = [(0, 0, 0); 6];
+        out
+    }
+}
+
+pub fn vision_stage_report() -> String {
+    stage_stats::take_report()
+}
+
 unsafe extern "C" {
     fn CVPixelBufferGetBaseAddress(pixel_buffer: &cv::PixelBuf) -> *mut u8;
     fn CVPixelBufferGetBytesPerRow(pixel_buffer: &cv::PixelBuf) -> usize;
@@ -232,8 +281,7 @@ impl Session {
                     Some(input) if input.width() == width && input.height() == height => input,
                     slot => slot.insert(create_input(width, height)?),
                 };
-                transfer
-                    .transfer(&buffer.0, input)
+                stage_stats::timed(0, || transfer.transfer(&buffer.0, input))
                     .map_err(|error| format!("copy segmentation frame: {error:?}"))?;
                 input.clone()
             }
@@ -263,7 +311,7 @@ impl Session {
             job.mask_dimensions = dimensions;
             repeated
         } else {
-            self.analyse(&input, job)?;
+            stage_stats::timed(5, || self.analyse(&input, job))?;
             (from_pixels && matches!(self.request, Request::Instances(_))).then(|| {
                 self.repeat.mask.clone_from(&self.cleanup.mask);
                 std::mem::swap(&mut self.repeat.pixels, &mut job.bgra);
@@ -271,17 +319,26 @@ impl Session {
                 job.mask_dimensions
             })
         };
-        self.cleanup.motion_frame(&input, job.mask_dimensions)?;
-        self.cleanup.finish(job.mask_dimensions, &mut job.mask);
+        stage_stats::timed(3, || self.cleanup.motion_frame(&input, job.mask_dimensions))?;
+        stage_stats::timed(4, || {
+            self.cleanup.finish(job.mask_dimensions, &mut job.mask)
+        });
+        *stage_stats::DIMS.lock().unwrap() = (
+            (input.width() as u32, input.height() as u32),
+            job.mask_dimensions,
+        );
         self.repeat.mask_dimensions = reusable;
         Ok(())
     }
 
     fn analyse(&mut self, input: &cv::PixelBuf, job: &mut VisionJob) -> Result<(), String> {
         let requests = ns::Array::<vn::Request>::from_slice(&[self.request.as_request()]);
-        self.handler
-            .perform_on_cv_pixel_buf(&requests, input)
+        stage_stats::timed(1, || self.handler.perform_on_cv_pixel_buf(&requests, input))
             .map_err(|error| format!("Vision person segmentation failed: {error:?}"))?;
+        stage_stats::timed(2, || self.extract(job))
+    }
+
+    fn extract(&mut self, job: &mut VisionJob) -> Result<(), String> {
         match &self.request {
             Request::Segmentation(request) => {
                 let results = request.results().ok_or("Vision returned no segmentation")?;
@@ -687,7 +744,13 @@ impl Drop for VisionSegmenter {
 }
 
 pub fn input_dimensions(width: u32, height: u32) -> (u32, u32) {
-    let (max_width, max_height) = MAX_INPUT_DIMENSIONS;
+    let (max_width, max_height) = std::env::var("CAP_SEG_MAX_INPUT")
+        .ok()
+        .and_then(|value| {
+            let (w, h) = value.split_once('x')?;
+            Some((w.parse().ok()?, h.parse().ok()?))
+        })
+        .unwrap_or(MAX_INPUT_DIMENSIONS);
     let (long, short) = if width >= height {
         (max_width, max_height)
     } else {

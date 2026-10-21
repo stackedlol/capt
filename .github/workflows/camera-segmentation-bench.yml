@@ -1,0 +1,69 @@
+name: Scratch camera segmentation bench
+on:
+  push:
+    branches: [ci/camera-segmentation-bench]
+jobs:
+  macos:
+    runs-on: blacksmith-6vcpu-macos-26
+    timeout-minutes: 150
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: aarch64-apple-darwin
+      - uses: ./.github/actions/setup-rust-cache
+        with:
+          target: aarch64-apple-darwin
+          prefix-key: v1-rust-gpui-macos26-scratch
+          save-cache: "true"
+          workspaces: apps/desktop-gpui -> target
+      - name: Setup
+        shell: bash
+        run: node scripts/setup.js
+        env:
+          RUST_TARGET_TRIPLE: aarch64-apple-darwin
+      - name: Prepare GPUI dependency
+        shell: bash
+        run: |
+          node scripts/sync-desktop-versions.mjs
+          ./scripts/prepare-gpui-dependency.sh
+      - name: Photos
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/photos"
+          cd "$RUNNER_TEMP/photos"
+          ua="cap-bench/1.0 (richie2@cap.so)"
+          curl -sfL -A "$ua" -o p1.jpg "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/65/JAXA_astronaut_Kimiya_Yui_is_photographed_during_an_interview_%28jsc2025e032707%29.jpg/3840px-JAXA_astronaut_Kimiya_Yui_is_photographed_during_an_interview_%28jsc2025e032707%29.jpg"
+          curl -sfL -A "$ua" -o p2.jpg "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/08/NASA_astronaut_Mike_Fincke_is_photographed_during_an_interview_%28jsc2025e005133%29.jpg/3840px-NASA_astronaut_Mike_Fincke_is_photographed_during_an_interview_%28jsc2025e005133%29.jpg"
+          curl -sfL -A "$ua" -o p3.jpg "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/11/NASA_astronaut_and_SpaceX_Crew-11_Commander_Zena_Cardman_%28jsc2025e034100%29.jpg/3840px-NASA_astronaut_and_SpaceX_Crew-11_Commander_Zena_Cardman_%28jsc2025e034100%29.jpg"
+          ls -la
+          echo "CAP_CAMERA_EFFECT_BENCH_IMAGES=$RUNNER_TEMP/photos/p1.jpg,$RUNNER_TEMP/photos/p2.jpg,$RUNNER_TEMP/photos/p3.jpg" >> "$GITHUB_ENV"
+      - name: Bench
+        shell: bash
+        run: |
+          set +e
+          frameworks="$GITHUB_WORKSPACE/apps/desktop-gpui/target/aarch64-apple-darwin/debug/Frameworks"
+          mkdir -p "$frameworks"
+          ln -sfn "$GITHUB_WORKSPACE/target/Frameworks/Spacedrive.framework" "$frameworks/Spacedrive.framework"
+          sw_vers
+          sysctl -n machdep.cpu.brand_string
+          test() {
+            cargo +1.95.0 test --manifest-path apps/desktop-gpui/Cargo.toml --locked --target aarch64-apple-darwin \
+              --config 'profile.dev.package.cap-desktop-gpui.opt-level=2' --bin cap-gpui "$@" -- --ignored --nocapture --test-threads=1
+          }
+          test camera_blur::bench::vision_input_size_quality 2>&1 | tee "$RUNNER_TEMP/quality.txt"
+          test camera_blur::bench::live_effect_cost 2>&1 | tee "$RUNNER_TEMP/live.txt"
+          CAP_CAMERA_EFFECT_BENCH_SOURCES=1920x1080 CAP_CAMERA_EFFECT_BENCH_MODES=remove CAP_CAMERA_EFFECT_BENCH_INTERVAL_MS=66 test camera_blur::bench::live_effect_cost 2>&1 | tee "$RUNNER_TEMP/live66.txt"
+          for cap in 640x360 512x288; do
+            CAP_SEG_MAX_INPUT=$cap CAP_CAMERA_EFFECT_BENCH_SOURCES=1920x1080 CAP_CAMERA_EFFECT_BENCH_MODES=remove test camera_blur::bench::live_effect_cost 2>&1 | tee "$RUNNER_TEMP/live-$cap.txt"
+          done
+          {
+            echo '## quality'; echo '```'; grep -E "^(Remove|Heavy) " "$RUNNER_TEMP/quality.txt"; echo '```'
+            for f in live live66 live-640x360 live-512x288; do echo "## $f"; grep -E "^\||^(Remove|Heavy|Light) " "$RUNNER_TEMP/$f.txt"; echo; done
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
