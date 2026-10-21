@@ -50,7 +50,7 @@ pub mod stage_stats {
                 );
             }
         }
-        *stats = [(0, 0, 0); 6];
+        *stats = [(0, 0, 0); 9];
         out
     }
 }
@@ -488,22 +488,24 @@ fn primary_person_mask(
     let (width, height) = (labels.width(), labels.height());
     areas.clear();
     areas.resize(256, 0);
-    with_locked_base(
-        &mut labels.retained(),
-        cv::pixel_buffer::LockFlags::READ_ONLY,
-        |base, stride| {
-            if stride < width {
-                return Err("Vision instance mask is not addressable".into());
-            }
-            for y in 0..height {
-                let row = unsafe { std::slice::from_raw_parts(base.add(y * stride), width) };
-                for &label in row {
-                    areas[usize::from(label)] += 1;
+    stage_stats::timed(6, || {
+        with_locked_base(
+            &mut labels.retained(),
+            cv::pixel_buffer::LockFlags::READ_ONLY,
+            |base, stride| {
+                if stride < width {
+                    return Err("Vision instance mask is not addressable".into());
                 }
-            }
-            Ok(())
-        },
-    )?;
+                for y in 0..height {
+                    let row = unsafe { std::slice::from_raw_parts(base.add(y * stride), width) };
+                    for &label in row {
+                        areas[usize::from(label)] += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    })?;
     let Some(primary) = (1..areas.len())
         .filter(|&label| areas[label] > 0)
         .max_by_key(|&label| areas[label])
@@ -515,9 +517,11 @@ fn primary_person_mask(
     };
     let instances = ns::IndexSet::with_index(primary);
     let mut error = None;
-    let mask = unsafe { observation.generate_mask_err(&instances, &mut error) }
-        .ok_or_else(|| format!("Vision instance mask failed: {error:?}"))?;
-    read_mask(&mask, output, dimensions)
+    let mask = stage_stats::timed(7, || unsafe {
+        observation.generate_mask_err(&instances, &mut error)
+    })
+    .ok_or_else(|| format!("Vision instance mask failed: {error:?}"))?;
+    stage_stats::timed(8, || read_mask(&mask, output, dimensions))
 }
 
 fn read_mask(

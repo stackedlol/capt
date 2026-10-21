@@ -599,3 +599,48 @@ fn vision_input_size_quality() {
         }
     }
 }
+
+#[test]
+#[ignore = "scratch: footprint at each stage of bringing the effect up"]
+fn footprint_stages() {
+    let photos = images();
+    let frames = camera_frames(&photos, 1920, 1080);
+    let mut last = footprint_mb();
+    let mut stage = |name: &str| {
+        let now = footprint_mb();
+        println!("footprint {name}: {now:.0} MB ({:+.0})", now - last);
+        last = now;
+    };
+    stage("start (frames built)");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let (device, queue) = shared_device(&runtime).unwrap();
+    stage("wgpu device");
+    for round in 0..2 {
+        let mut converter = Converter::new((1920, 1080));
+        let mut worker = Worker::new(device.clone(), queue.clone()).unwrap();
+        stage(&format!("round {round} worker created (vision probe)"));
+        for index in 0..60 {
+            let job = converter.convert(
+                &frames[index / 20 % frames.len()][index % PAN_POSITIONS],
+                BlurMode::Remove,
+            );
+            let _ = worker.process(&runtime, job).unwrap();
+            if index == 0 {
+                stage(&format!("round {round} first frame"));
+            }
+            std::thread::sleep(Duration::from_millis(33));
+        }
+        stage(&format!("round {round} 60 frames"));
+        if let Ok(seconds) = std::env::var("CAP_BENCH_HOLD_SECS") {
+            println!("holding pid {} for {seconds}s", std::process::id());
+            std::thread::sleep(Duration::from_secs(seconds.parse().unwrap()));
+        }
+        drop(worker);
+        drop(converter);
+        std::thread::sleep(Duration::from_secs(1));
+        stage(&format!("round {round} dropped"));
+    }
+}
