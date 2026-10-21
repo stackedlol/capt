@@ -183,8 +183,124 @@ enum Request {
     Segmentation(arc::R<vn::GenPersonSegmentationRequest>),
 }
 
+pub mod devices {
+    use std::ffi::{CStr, c_char, c_void};
+
+    unsafe extern "C" {
+        fn sel_registerName(name: *const c_char) -> *const c_void;
+        fn objc_msgSend();
+        fn object_getClassName(object: *const c_void) -> *const c_char;
+    }
+
+    unsafe fn send0(object: *const c_void, selector: &CStr) -> *const c_void {
+        let f: unsafe extern "C" fn(*const c_void, *const c_void) -> *const c_void =
+            unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(object, sel_registerName(selector.as_ptr())) }
+    }
+
+    unsafe fn send1(object: *const c_void, selector: &CStr, a: *const c_void) -> *const c_void {
+        let f: unsafe extern "C" fn(*const c_void, *const c_void, *const c_void) -> *const c_void =
+            unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(object, sel_registerName(selector.as_ptr()), a) }
+    }
+
+    unsafe fn send2(
+        object: *const c_void,
+        selector: &CStr,
+        a: *const c_void,
+        b: *const c_void,
+    ) -> *const c_void {
+        let f: unsafe extern "C" fn(
+            *const c_void,
+            *const c_void,
+            *const c_void,
+            *const c_void,
+        ) -> *const c_void = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(object, sel_registerName(selector.as_ptr()), a, b) }
+    }
+
+    unsafe fn index(array: *const c_void, at: usize) -> *const c_void {
+        let f: unsafe extern "C" fn(*const c_void, *const c_void, usize) -> *const c_void =
+            unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(array, sel_registerName(c"objectAtIndex:".as_ptr()), at) }
+    }
+
+    unsafe fn count(array: *const c_void) -> usize {
+        unsafe { send0(array, c"count") as usize }
+    }
+
+    unsafe fn describe(object: *const c_void) -> String {
+        if object.is_null() {
+            return "nil".into();
+        }
+        unsafe {
+            let description = send0(object, c"description");
+            CStr::from_ptr(send0(description, c"UTF8String").cast())
+                .to_string_lossy()
+                .into_owned()
+        }
+    }
+
+    /// Prints the request's supported devices and, with `CAP_SEG_DEVICE`
+    /// (`ane`, `gpu`, `cpu`), pins every compute stage to that device.
+    pub fn configure(request: *const c_void) {
+        unsafe {
+            if send0(request, c"class").is_null() {
+                return;
+            }
+            let supported = send1(
+                request,
+                c"supportedComputeStageDevicesAndReturnError:",
+                std::ptr::null(),
+            );
+            if supported.is_null() {
+                eprintln!("vision devices: unsupported");
+                return;
+            }
+            let keys = send0(supported, c"allKeys");
+            let wanted = std::env::var("CAP_SEG_DEVICE").ok();
+            for key in 0..count(keys) {
+                let stage = index(keys, key);
+                let before = send1(request, c"computeDeviceForComputeStage:", stage);
+                let devices = send1(supported, c"objectForKey:", stage);
+                let mut names = Vec::new();
+                for device in 0..count(devices) {
+                    let device = index(devices, device);
+                    let name = CStr::from_ptr(object_getClassName(device))
+                        .to_string_lossy()
+                        .into_owned();
+                    let matches = match wanted.as_deref() {
+                        Some("ane") => name.contains("NeuralEngine"),
+                        Some("gpu") => name.contains("GPU"),
+                        Some("cpu") => name.contains("CPU"),
+                        _ => false,
+                    };
+                    if matches {
+                        send2(request, c"setComputeDevice:forComputeStage:", device, stage);
+                    }
+                    names.push(name);
+                }
+                let after = send1(request, c"computeDeviceForComputeStage:", stage);
+                eprintln!(
+                    "vision devices: stage {} supports {:?}; default {} -> now {}",
+                    describe(stage),
+                    names,
+                    describe(before),
+                    describe(after)
+                );
+            }
+        }
+    }
+}
+
 impl Request {
     fn new() -> Self {
+        let request = Self::create();
+        devices::configure(request.as_request() as *const vn::Request as *const std::ffi::c_void);
+        request
+    }
+
+    fn create() -> Self {
         if std::env::var("CAP_CAMERA_SEGMENTATION").as_deref() != Ok("vision-segmentation")
             && let Some(request) = PersonInstanceMaskRequest::new()
         {
