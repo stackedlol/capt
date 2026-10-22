@@ -92,8 +92,8 @@ import {
 	useRecordingOptions,
 } from "../OptionsContext";
 import ControlIsland from "./ControlIsland";
+import { HexIconButton } from "./HexTile";
 import ModeInfoPanel from "./ModeInfoPanel";
-import PerformanceStrip from "./PerformanceStrip";
 import RadialCaptureMenu, {
 	type CaptureAction,
 	type CaptureTarget,
@@ -2590,7 +2590,97 @@ function Page() {
 			exitToClass="scale-95"
 		>
 			<div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto pb-1 w-full">
+				<div class="-mb-1 flex justify-center" data-tauri-drag-region>
+					<ControlIsland />
+				</div>
 				<RadialCaptureMenu
+					topLeft={
+						<>
+							<Tooltip content={<span>Close</span>}>
+								<HexIconButton
+									aria-label="Close window"
+									tone="red"
+									width={22}
+									onClick={() => void getCurrentWindow().close()}
+								>
+									<IconCapX class="size-2" />
+								</HexIconButton>
+							</Tooltip>
+							<Tooltip content={<span>Settings</span>}>
+								<HexIconButton
+									aria-label="Settings"
+									onClick={async () => {
+										await commands.showWindow({
+											Settings: { page: "general" },
+										});
+										hideCurrentWindow();
+									}}
+								>
+									<IconLucideSettings class="size-3.5" />
+								</HexIconButton>
+							</Tooltip>
+							<Tooltip content={<span>Screenshots</span>}>
+								<HexIconButton
+									aria-label="Screenshots"
+									active={screenshotsMenuOpen()}
+									onClick={() => {
+										setScreenshotsMenuOpen((prev) => {
+											const next = !prev;
+											if (next) {
+												setDisplayMenuOpen(false);
+												setWindowMenuOpen(false);
+												setRecordingsMenuOpen(false);
+											}
+											return next;
+										});
+									}}
+								>
+									<IconLucideImage class="size-3.5" />
+								</HexIconButton>
+							</Tooltip>
+						</>
+					}
+					topRight={
+						<>
+							<Tooltip content={<span>Recordings</span>}>
+								<HexIconButton
+									aria-label="Recordings"
+									active={recordingsMenuOpen()}
+									onClick={() => {
+										setRecordingsMenuOpen((prev) => {
+											const next = !prev;
+											if (next) {
+												setDisplayMenuOpen(false);
+												setWindowMenuOpen(false);
+												setScreenshotsMenuOpen(false);
+											}
+											return next;
+										});
+									}}
+								>
+									<IconLucideSquarePlay class="size-3.5" />
+								</HexIconButton>
+							</Tooltip>
+							<Tooltip content={<span>Teleprompter</span>}>
+								<HexIconButton
+									onClick={() => void openTeleprompter()}
+									aria-label="Open teleprompter"
+								>
+									<IconLucideScanText class="size-3.5" />
+								</HexIconButton>
+							</Tooltip>
+							{import.meta.env.DEV && (
+								<HexIconButton
+									aria-label="Debug"
+									onClick={() => {
+										new WebviewWindow("debug", { url: "/debug" });
+									}}
+								>
+									<IconLucideBug class="size-3.5" />
+								</HexIconButton>
+							)}
+						</>
+					}
 					activeAction={
 						activeCaptureTarget() &&
 						(rawOptions.mode === "studio" || rawOptions.mode === "screenshot")
@@ -2644,90 +2734,7 @@ function Page() {
 				</div>
 			</Show>
 			<WindowChromeHeader hideMaximize>
-				<div
-					class="flex flex-1 gap-1 items-center mx-2 min-w-0"
-					data-tauri-drag-region
-				>
-					<div
-						class="flex flex-1 justify-center items-center min-h-9 min-w-0"
-						data-tauri-drag-region
-					>
-						<ControlIsland />
-					</div>
-					<div class="flex gap-1 items-center shrink-0" data-tauri-drag-region>
-						<Tooltip content={<span>Settings</span>}>
-							<button
-								type="button"
-								onClick={async () => {
-									await commands.showWindow({ Settings: { page: "general" } });
-									hideCurrentWindow();
-								}}
-								class="flex items-center justify-center size-5 focus:outline-hidden"
-							>
-								<IconLucideSettings class="transition-colors text-gray-11 size-4 hover:text-gray-12" />
-							</button>
-						</Tooltip>
-						<Tooltip content={<span>Screenshots</span>}>
-							<button
-								type="button"
-								onClick={() => {
-									setScreenshotsMenuOpen((prev) => {
-										const next = !prev;
-										if (next) {
-											setDisplayMenuOpen(false);
-											setWindowMenuOpen(false);
-											setRecordingsMenuOpen(false);
-										}
-										return next;
-									});
-								}}
-								class="flex justify-center items-center size-5 focus:outline-hidden"
-							>
-								<IconLucideImage class="transition-colors text-gray-11 size-4 hover:text-gray-12" />
-							</button>
-						</Tooltip>
-						<Tooltip content={<span>Recordings</span>}>
-							<button
-								type="button"
-								onClick={() => {
-									setRecordingsMenuOpen((prev) => {
-										const next = !prev;
-										if (next) {
-											setDisplayMenuOpen(false);
-											setWindowMenuOpen(false);
-											setScreenshotsMenuOpen(false);
-										}
-										return next;
-									});
-								}}
-								class="flex justify-center items-center size-5 focus:outline-hidden"
-							>
-								<IconLucideSquarePlay class="transition-colors text-gray-11 size-4 hover:text-gray-12" />
-							</button>
-						</Tooltip>
-						<Tooltip content={<span>Teleprompter</span>}>
-							<button
-								type="button"
-								onClick={() => void openTeleprompter()}
-								class="flex justify-center items-center size-5 focus:outline-hidden"
-								aria-label="Open teleprompter"
-							>
-								<IconLucideScanText class="transition-colors text-gray-11 size-4 hover:text-gray-12" />
-							</button>
-						</Tooltip>
-						{import.meta.env.DEV && (
-							<button
-								type="button"
-								onClick={() => {
-									new WebviewWindow("debug", { url: "/debug" });
-								}}
-								class="flex justify-center items-center focus:outline-hidden"
-							>
-								<IconLucideBug class="transition-colors text-gray-11 size-4 hover:text-gray-12" />
-							</button>
-						)}
-					</div>
-				</div>
+				<div class="flex-1 min-h-9 min-w-0" data-tauri-drag-region />
 			</WindowChromeHeader>
 			<Show when={!isActivelyRecording() && recordingErrors().length > 0}>
 				<div
@@ -2738,8 +2745,7 @@ function Page() {
 					<For each={recordingErrors()}>{(error) => <p>{error}</p>}</For>
 				</div>
 			</Show>
-			<div class="flex flex-col items-center gap-2 mt-[16px] mb-[6px]">
-				<PerformanceStrip />
+			<div class="flex flex-col items-center gap-2 mt-[10px] mb-[6px] empty:hidden">
 				<Show when={!activeMenu() && editorRecordingFlow()}>
 					{(flow) => (
 						<div class="flex min-w-0 items-center justify-center gap-2.5 animate-in fade-in slide-in-from-left-1 duration-200">
@@ -2768,7 +2774,13 @@ function Page() {
 					)}
 				</Show>
 			</div>
-			<div class="flex-1 min-h-0 w-full flex flex-col">
+			<div
+				class={cx(
+					"flex-1 min-h-0 w-full flex flex-col",
+					activeMenu() &&
+						"rounded-xl bg-white p-2 text-[#1c1c1e] shadow-[0_8px_24px_rgba(0,0,0,0.18)]",
+				)}
+			>
 				<Show when={activeMenu()} keyed fallback={<TargetSelectionHome />}>
 					{(variant) =>
 						variant === "display" ? (

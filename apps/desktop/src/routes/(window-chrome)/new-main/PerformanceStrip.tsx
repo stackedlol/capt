@@ -3,7 +3,7 @@ import { createSignal, For, onCleanup, onMount } from "solid-js";
 import { commands, type PerformanceStats } from "~/utils/tauri";
 
 const SAMPLE_MS = 1000;
-const HISTORY = 24;
+const HISTORY = 12;
 const GIB = 1024 ** 3;
 const MIB = 1024 ** 2;
 const LEFT_DOTS = [0x40, 0x04, 0x02, 0x01];
@@ -32,7 +32,7 @@ function brailleLine(values: number[], max: number) {
 const push = (list: number[], value: number) =>
 	[...list, value].slice(-HISTORY);
 
-type Metric = {
+export type Metric = {
 	label: string;
 	value: () => string;
 	detail: () => string;
@@ -41,7 +41,7 @@ type Metric = {
 	hot: () => boolean;
 };
 
-export default function PerformanceStrip(props: { class?: string }) {
+export function createPerformanceMetrics(): Metric[] {
 	const [fps, setFps] = createSignal<number[]>([]);
 	const [cpu, setCpu] = createSignal<number[]>([]);
 	const [ram, setRam] = createSignal<number[]>([]);
@@ -98,7 +98,7 @@ export default function PerformanceStrip(props: { class?: string }) {
 
 	const metrics: Metric[] = [
 		{
-			label: "FPS",
+			label: "fps",
 			value: () => (fps().length ? String(last(fps())) : "--"),
 			detail: () => "Frames per second in this window",
 			history: fps,
@@ -106,7 +106,7 @@ export default function PerformanceStrip(props: { class?: string }) {
 			hot: () => fps().length > 0 && last(fps()) < 30,
 		},
 		{
-			label: "CPU",
+			label: "cpu",
 			value: () =>
 				stats() ? `${Math.round(stats()?.cpuPercent ?? 0)}%` : "--",
 			detail: () => {
@@ -120,7 +120,7 @@ export default function PerformanceStrip(props: { class?: string }) {
 			hot: () => (stats()?.cpuPercent ?? 0) > 85,
 		},
 		{
-			label: "RAM",
+			label: "ram",
 			value: () => {
 				const s = stats();
 				return s ? `${(s.memoryUsedBytes / GIB).toFixed(1)}G` : "--";
@@ -140,33 +140,37 @@ export default function PerformanceStrip(props: { class?: string }) {
 		},
 	];
 
+	return metrics;
+}
+
+export function MetricBlock(props: { metrics: Metric[]; class?: string }) {
 	return (
 		<div
-			class={cx("grid w-full grid-cols-3 gap-3 select-none", props.class)}
-			data-tauri-drag-region
+			class={cx(
+				"relative flex flex-col items-center gap-[3px] select-none",
+				props.class,
+			)}
+			title={props.metrics.map((m) => m.detail()).join("\n")}
 		>
-			<For each={metrics}>
+			<For each={props.metrics}>
 				{(metric) => (
-					<div
-						class="flex min-w-0 flex-col items-center gap-0.5"
-						title={metric.detail()}
-					>
-						<div class="flex items-baseline justify-center gap-1.5">
-							<span class="text-[10px] font-semibold text-gray-10">
+					<div class="flex flex-col items-center gap-[2px]">
+						<span class="flex items-baseline gap-1 whitespace-nowrap">
+							<span class="text-[9px] font-semibold text-[#6e6e75]">
 								{metric.label}
 							</span>
 							<span
 								class={cx(
-									"text-[11px] font-medium tabular-nums tracking-[-0.01em]",
-									metric.hot() ? "text-red-9" : "text-gray-12",
+									"text-[10px] font-medium tabular-nums leading-none tracking-[-0.01em]",
+									metric.hot() ? "text-red-9" : "text-[#1c1c1e]",
 								)}
 							>
 								{metric.value()}
 							</span>
-						</div>
+						</span>
 						<span
 							aria-hidden="true"
-							class="relative block overflow-hidden whitespace-nowrap text-[11px] leading-none text-blue-9 dark:text-blue-11"
+							class="relative block whitespace-nowrap text-[9px] leading-none text-[#1b2d6b]"
 						>
 							<span class="opacity-15">{TRACK}</span>
 							<span class="absolute inset-0">

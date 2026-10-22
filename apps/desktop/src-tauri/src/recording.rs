@@ -6285,15 +6285,13 @@ pub fn generate_zoom_segments_from_clicks(
     generate_zoom_segments_for_project(&recording_meta, recordings, zoom_amount)
 }
 
-/// Generates zoom segments from clicks for an existing project.
-/// Used in the editor context where we have RecordingMeta.
-pub fn generate_zoom_segments_for_project(
+/// Loads every click and cursor move recorded for a studio project, across
+/// all of its segments.
+pub fn project_cursor_events(
     recording_meta: &RecordingMeta,
-    recordings: &ProjectRecordingsMeta,
-    zoom_amount: f64,
-) -> Vec<ZoomSegment> {
+) -> (Vec<CursorClickEvent>, Vec<CursorMoveEvent>) {
     let RecordingMetaInner::Studio(studio_meta) = &recording_meta.inner else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
 
     let mut all_clicks = Vec::new();
@@ -6322,6 +6320,18 @@ pub fn generate_zoom_segments_for_project(
             }
         }
     }
+
+    (all_clicks, all_moves)
+}
+
+/// Generates zoom segments from clicks for an existing project.
+/// Used in the editor context where we have RecordingMeta.
+pub fn generate_zoom_segments_for_project(
+    recording_meta: &RecordingMeta,
+    recordings: &ProjectRecordingsMeta,
+    zoom_amount: f64,
+) -> Vec<ZoomSegment> {
+    let (all_clicks, all_moves) = project_cursor_events(recording_meta);
 
     generate_zoom_segments_from_clicks_impl(
         all_clicks,

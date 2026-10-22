@@ -24,7 +24,7 @@ import themePreviewAuto from "~/assets/theme-previews/auto.jpg";
 import themePreviewDark from "~/assets/theme-previews/dark.jpg";
 import themePreviewLight from "~/assets/theme-previews/light.jpg";
 import { Input, Slider } from "~/routes/editor/ui";
-import { generalSettingsStore } from "~/store";
+import { aiStore, generalSettingsStore } from "~/store";
 import {
 	deriveGeneralSettings,
 	type GeneralSettingsStore,
@@ -616,6 +616,8 @@ function Inner(props: { initialStore: GeneralSettingsStore | null }) {
 					isWindows={ostype === "windows"}
 				/>
 
+				<AiCard />
+
 				<TelemetryCard
 					value={settings.enableTelemetry !== false}
 					onChange={(v) => handleChange("enableTelemetry", v)}
@@ -708,6 +710,59 @@ function StorageSection(props: {
 					</div>
 				</div>
 			</SectionCard>
+		</Section>
+	);
+}
+
+function AiCard() {
+	const [stored, { mutate }] = createResource(async () => {
+		const value = await aiStore.get();
+		return value?.deepseekApiKey ?? "";
+	});
+	const [draft, setDraft] = createSignal<string | null>(null);
+	const value = () => draft() ?? stored() ?? "";
+
+	const save = async () => {
+		const next = draft();
+		if (next === null) return;
+		const trimmed = next.trim();
+		setDraft(null);
+		if (trimmed === (stored() ?? "")) return;
+		try {
+			await aiStore.set({ deepseekApiKey: trimmed });
+			mutate(trimmed);
+			toast.success(trimmed ? "DeepSeek key saved" : "DeepSeek key removed");
+		} catch (error) {
+			console.error("Failed to save DeepSeek key", error);
+			toast.error("Could not save the DeepSeek key");
+		}
+	};
+
+	return (
+		<Section
+			title="AI"
+			description="Used to plan zooms in the editor. Click, cursor and typing timings plus the transcript are sent to DeepSeek; typed keys are not."
+		>
+			<SectionRows>
+				<SettingItem
+					label="DeepSeek API key"
+					description="Stored on this Mac only."
+				>
+					<Input
+						type="password"
+						autocomplete="off"
+						spellcheck={false}
+						placeholder="sk-..."
+						class="w-48"
+						value={value()}
+						onInput={(e) => setDraft(e.currentTarget.value)}
+						onBlur={() => void save()}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") e.currentTarget.blur();
+						}}
+					/>
+				</SettingItem>
+			</SectionRows>
 		</Section>
 	);
 }

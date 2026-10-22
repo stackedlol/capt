@@ -8,7 +8,7 @@ import {
 } from "@tauri-apps/api/window";
 import { type as osType, version as osVersion } from "@tauri-apps/plugin-os";
 
-type MacOSWindowMaterial = "panel" | "settings" | "teleprompter";
+type MacOSWindowMaterial = "panel" | "settings" | "teleprompter" | "float";
 
 let focusUnlisten: Promise<UnlistenFn> | undefined;
 
@@ -46,6 +46,13 @@ export async function applyMacOSWindowMaterial(material: MacOSWindowMaterial) {
 		updateWindowFocusState(payload),
 	);
 	await focusUnlisten;
+
+	if (material === "float") {
+		await invoke("float_macos_window").catch((error) => {
+			console.warn("Failed to float the macOS window:", error);
+		});
+		return;
+	}
 
 	if (visualSystem === "liquid-glass") {
 		const appliedNativeGlass = await invoke<boolean>(

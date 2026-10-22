@@ -613,6 +613,47 @@ unsafe fn teardown_liquid_glass_ns(ns_window: cocoa::base::id) {
     }
 }
 
+/// Strip every native backdrop from a window so only the webview's own pixels
+/// show: the Liquid Glass view, the content-layer corner mask it installs, and
+/// the opaque window background. Vibrancy from `set_effects` is cleared by the
+/// caller through Tauri.
+pub fn float_window(window: &tauri::Window) -> Result<(), String> {
+    use cocoa::{
+        base::{id, nil},
+        foundation::NSString,
+    };
+    use objc::{class, msg_send, runtime::Class, sel, sel_impl};
+
+    unsafe {
+        let ns_window = window
+            .ns_window()
+            .map_err(|error| format!("Failed to get native window handle: {error}"))?
+            as id;
+        let content_view: id = msg_send![ns_window, contentView];
+        if content_view == nil {
+            return Err("Window has no content view".into());
+        }
+        if let Some(glass_class) = Class::get("NSGlassEffectView") {
+            let glass_identifier = NSString::alloc(nil).init_str(LIQUID_GLASS_IDENTIFIER);
+            remove_liquid_glass_subviews(
+                content_view,
+                glass_identifier,
+                glass_class as *const Class,
+            );
+        }
+        let content_layer: id = msg_send![content_view, layer];
+        if content_layer != nil {
+            let _: () = msg_send![content_layer, setCornerRadius: 0.0f64];
+            let _: () = msg_send![content_layer, setMasksToBounds: false];
+        }
+        let clear: id = msg_send![class!(NSColor), clearColor];
+        let _: () = msg_send![ns_window, setBackgroundColor: clear];
+        let _: () = msg_send![ns_window, setOpaque: false];
+        let _: () = msg_send![ns_window, invalidateShadow];
+    }
+    Ok(())
+}
+
 /// Tear down liquid glass on every webview window. MUST be called on the AppKit main
 /// thread (e.g. from the `RunEvent::Exit` handler, which runs on main). Returns the
 /// number of windows processed.

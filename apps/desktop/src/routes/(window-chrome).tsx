@@ -44,12 +44,29 @@ export default function (props: RouteSectionProps) {
 
 	const isMacOS = ostype() === "macos";
 
-	createEffect(() => {
-		void applyMacOSWindowMaterial(
-			location.pathname.startsWith("/settings") ? "settings" : "panel",
-		).catch((error) => {
+	const material = () =>
+		location.pathname.startsWith("/settings")
+			? "settings"
+			: location.pathname === "/"
+				? "float"
+				: "panel";
+
+	const applyMaterial = () => {
+		void applyMacOSWindowMaterial(material()).catch((error) => {
 			console.error("Failed to apply macOS window material:", error);
 		});
+	};
+
+	createEffect(applyMaterial);
+
+	onMount(() => {
+		const onVisibility = () => {
+			if (!document.hidden) applyMaterial();
+		};
+		document.addEventListener("visibilitychange", onVisibility);
+		onCleanup(() =>
+			document.removeEventListener("visibilitychange", onVisibility),
+		);
 	});
 
 	return (
@@ -93,6 +110,7 @@ function Header() {
 	const isMacOS = ostype() === "macos";
 	const isLinux = ostype() === "linux";
 	const isSettings = () => location.pathname.startsWith("/settings");
+	const isMain = () => location.pathname === "/";
 
 	if (isMacOS && isSettings()) return null;
 
@@ -113,7 +131,7 @@ function Header() {
 					onMaximize={ctx.state()?.onMaximize}
 				/>
 			)}
-			{((isMacOS && !isSettings()) || isLinux) && (
+			{((isMacOS && !isSettings() && !isMain()) || isLinux) && (
 				<CaptionControlsMacOS
 					class="mr-auto! ml-3"
 					showMinimize={false}

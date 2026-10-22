@@ -101,12 +101,9 @@ function TrafficLightButton(props: TrafficLightButtonProps) {
 		<button
 			type="button"
 			aria-label={light().label}
-			class="relative flex size-3 items-center justify-center rounded-sm transition-[filter] duration-100 active:brightness-[0.82]"
+			class="relative flex h-3 w-[14px] items-center justify-center [clip-path:polygon(25%_0%,75%_0%,100%_50%,75%_100%,25%_100%,0%_50%)] transition-[filter] duration-100 active:brightness-[0.82]"
 			style={{
 				"background-color": active() ? light().fill : "var(--gray-6)",
-				"box-shadow": active()
-					? `inset 0 0 0 0.5px ${light().edge}`
-					: "inset 0 0 0 0.5px rgba(0, 0, 0, 0.12)",
 			}}
 			onClick={(e) => {
 				e.stopPropagation();

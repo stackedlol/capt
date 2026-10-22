@@ -39,7 +39,6 @@ import {
 	createCropOptionsMenuItems,
 	type Ratio,
 } from "~/components/Cropper";
-import ModeSelect from "~/components/ModeSelect";
 import SelectionHint from "~/components/selection-hint";
 import { generalSettingsStore } from "~/store";
 import {
@@ -174,8 +173,6 @@ function Inner() {
 		}
 	});
 
-	const [toggleModeSelect, setToggleModeSelect] = createSignal(false);
-
 	const [targetUnderCursor, setTargetUnderCursor] =
 		createStore<TargetUnderCursor>({
 			display_id: null,
@@ -308,44 +305,42 @@ function Inner() {
 				{(displayId) => (
 					<div
 						data-over={targetUnderCursor.display_id === displayId()}
-						class="relative w-screen h-screen flex flex-col items-center justify-center data-[over='true']:bg-blue-600/40 transition-colors"
+						class="group relative w-screen h-screen flex flex-col items-center justify-center"
 					>
-						<div class="absolute inset-0 bg-black/60 -z-10" />
+						<div class="pointer-events-none absolute inset-0 -z-10 bg-black/45 transition-opacity group-data-[over='true']:opacity-0" />
+						<div class="pointer-events-none absolute inset-0 -z-10 border-2 border-blue-9 opacity-0 transition-opacity group-data-[over='true']:opacity-100" />
 
 						<Show when={displayInformation.data} keyed>
 							{(display) => (
-								<div class="flex flex-col items-center text-white">
-									<IconCapMonitor class="size-20 mb-3" />
-									<span class="mb-2 text-3xl font-semibold">
-										{display.name || "Monitor"}
-									</span>
-									<Show when={display.physical_size}>
-										{(size) => (
-											<span class="mb-2 text-xs">
-												{`${size().width}x${size().height} · ${
-													display.refresh_rate
-												}FPS`}
-											</span>
-										)}
-									</Show>
+								<div
+									class="fixed left-1/2 z-[60] max-w-[calc(100vw-2rem)] -translate-x-1/2"
+									classList={{
+										"top-12": ostype() === "macos",
+										"top-4": ostype() !== "macos",
+									}}
+								>
+									<div
+										class={`${LIQUID_GLASS_SURFACE_CLASS} flex h-12 items-center gap-3 px-4 text-gray-12`}
+									>
+										<span class="truncate text-base font-normal leading-none tracking-[-0.01em]">
+											{display.name || "Display"}
+										</span>
+										<Show when={display.physical_size}>
+											{(size) => (
+												<>
+													<div class="h-6 w-px bg-gray-5" />
+													<span class="text-xs text-gray-11 tabular-nums text-nowrap">
+														{`${size().width} × ${size().height} · ${display.refresh_rate} fps`}
+													</span>
+												</>
+											)}
+										</Show>
+									</div>
 								</div>
 							)}
 						</Show>
 
-						<Show when={toggleModeSelect()}>
-							{/* Transparent overlay to capture outside clicks */}
-							<div
-								class="absolute inset-0 z-10"
-								onClick={() => setToggleModeSelect(false)}
-							/>
-							<ModeSelect
-								standalone
-								onClose={() => setToggleModeSelect(false)}
-							/>
-						</Show>
-
 						<RecordingControls
-							setToggleModeSelect={setToggleModeSelect}
 							target={{ variant: "display", id: displayId() }}
 							onRecordingStart={dismissPickerForRecordingStart}
 							onClose={() => {
@@ -1091,18 +1086,6 @@ function Inner() {
 					const TOP_SAFE_MARGIN = macos ? 40 : 10; // keep clear of notch on MacBooks
 
 					const controlsSize = createElementSize(() => controlsEl);
-					const [controllerInside, _setControllerInside] = createSignal(false);
-
-					// This is required due to the use of a ResizeObserver within the createElementSize function
-					// Otherwise there will be an infinite loop: ResizeObserver loop completed with undelivered notifications.
-					let raf: number | null = null;
-					function setControllerInside(value: boolean) {
-						if (raf) cancelAnimationFrame(raf);
-						raf = requestAnimationFrame(() => _setControllerInside(value));
-					}
-					onCleanup(() => {
-						if (raf) cancelAnimationFrame(raf);
-					});
 
 					const controlsStyle = createMemo(() => {
 						const bounds = crop();
@@ -1120,17 +1103,14 @@ function Inner() {
 						const belowY = bounds.y + bounds.height + MARGIN_BELOW;
 						if (belowY + size.height <= window.innerHeight) {
 							finalY = belowY;
-							setControllerInside(false);
 						} else {
 							// Try above the crop with a larger top margin
 							const aboveY = bounds.y - size.height - MARGIN_TOP_OUTSIDE;
 							if (aboveY >= TOP_SAFE_MARGIN) {
 								finalY = aboveY;
-								setControllerInside(false);
 							} else {
 								// Default to inside
 								finalY = bounds.y + MARGIN_TOP_INSIDE;
-								setControllerInside(true);
 							}
 						}
 
@@ -1373,7 +1353,6 @@ function Inner() {
 												},
 											}}
 											disabled={!isValid()}
-											showBackground={controllerInside()}
 											onRecordingStart={() => {
 												persistLockedSelection();
 												setOriginalCameraBounds(null);
@@ -1426,8 +1405,6 @@ function Inner() {
 
 function RecordingControls(props: {
 	target: ScreenCaptureTarget;
-	setToggleModeSelect?: (value: boolean) => void;
-	showBackground?: boolean;
 	disabled?: boolean;
 	onRecordingStart?: () => void;
 	onClose?: () => void;
@@ -1636,116 +1613,97 @@ function RecordingControls(props: {
 	}
 
 	return (
-		<>
-			<div class="flex flex-col gap-2.5 items-stretch my-2.5 w-104 max-w-[90vw]">
-				<div class={`${LIQUID_GLASS_SURFACE_CLASS} p-3`}>
-					<div class="flex gap-2.5 items-center">
+		<div class="flex flex-col gap-2.5 items-stretch my-2.5 w-104 max-w-[90vw]">
+			<div class={`${LIQUID_GLASS_SURFACE_CLASS} p-3`}>
+				<div class="flex gap-2.5 items-center">
+					<div
+						onClick={() => {
+							if (props.onClose) {
+								props.onClose();
+							} else {
+								setOptions({
+									targetMode: null,
+									targetModeDismissal: "cancelled",
+								});
+								commands.closeTargetSelectOverlays();
+							}
+						}}
+						class="flex justify-center items-center rounded-sm transition-opacity bg-gray-12 size-9 hover:opacity-80"
+					>
+						<IconCapX class="invert will-change-transform size-3 dark:invert-0" />
+					</div>
+					<div
+						data-disabled={startDisabled()}
+						class="flex flex-1 min-w-0 max-w-[18rem] overflow-hidden flex-row h-11 rounded-sm text-white bg-linear-to-r from-blue-10 via-blue-10 to-blue-11 dark:from-blue-9 dark:via-blue-9 dark:to-blue-10 group"
+						onClick={() => void startRecording()}
+					>
 						<div
-							onClick={() => {
-								if (props.onClose) {
-									props.onClose();
-								} else {
-									setOptions({
-										targetMode: null,
-										targetModeDismissal: "cancelled",
-									});
-									commands.closeTargetSelectOverlays();
-								}
+							class="flex flex-1 items-center py-1 pl-4 transition-colors hover:bg-white/10 min-w-0"
+							classList={{
+								"opacity-60 cursor-not-allowed hover:bg-transparent":
+									startDisabled(),
 							}}
-							class="flex justify-center items-center rounded-sm transition-opacity bg-gray-12 size-9 hover:opacity-80"
 						>
-							<IconCapX class="invert will-change-transform size-3 dark:invert-0" />
-						</div>
-						<div
-							data-disabled={startDisabled()}
-							class="flex flex-1 min-w-0 max-w-[18rem] overflow-hidden flex-row h-11 rounded-sm text-white bg-linear-to-r from-blue-10 via-blue-10 to-blue-11 dark:from-blue-9 dark:via-blue-9 dark:to-blue-10 group"
-							onClick={() => void startRecording()}
-						>
-							<div
-								class="flex flex-1 items-center py-1 pl-4 transition-colors hover:bg-white/10 min-w-0"
-								classList={{
-									"opacity-60 cursor-not-allowed hover:bg-transparent":
-										startDisabled(),
-								}}
-							>
-								<Switch>
-									<Match when={rawOptions.mode === "studio"}>
-										<IconCapFilmCut class="size-4 shrink-0" />
-									</Match>
-									<Match when={(rawOptions.mode as string) === "screenshot"}>
-										<IconCapCamera class="size-4 shrink-0" />
-									</Match>
-								</Switch>
-								<div class="flex flex-col mr-2 ml-3 min-w-0">
-									<span class="text-[0.95rem] font-medium text-white text-nowrap">
-										{rawOptions.mode === "screenshot"
-											? "Take Screenshot"
-											: "Start Recording"}
-									</span>
-									<span class="text-[11px] flex items-center text-nowrap gap-1 transition-opacity duration-200 text-white/90 font-light -mt-0.5">
-										{`${capitalize(rawOptions.mode)} Mode`}
-									</span>
-								</div>
+							<Switch>
+								<Match when={rawOptions.mode === "studio"}>
+									<IconCapFilmCut class="size-4 shrink-0" />
+								</Match>
+								<Match when={(rawOptions.mode as string) === "screenshot"}>
+									<IconCapCamera class="size-4 shrink-0" />
+								</Match>
+							</Switch>
+							<div class="flex flex-col mr-2 ml-3 min-w-0">
+								<span class="text-[0.95rem] font-medium text-white text-nowrap">
+									{rawOptions.mode === "screenshot"
+										? "Take Screenshot"
+										: "Start Recording"}
+								</span>
+								<span class="text-[11px] flex items-center text-nowrap gap-1 transition-opacity duration-200 text-white/90 font-light -mt-0.5">
+									{`${capitalize(rawOptions.mode)} Mode`}
+								</span>
 							</div>
-							<button
-								type="button"
-								aria-label="Choose recording mode"
-								class="pl-2.5 pr-3 py-1.5 flex items-center border-l border-white/20 bg-white/5 transition-colors group-hover:bg-white/10"
-								onClick={(e) => showMenu(menuModes, e)}
-							>
-								<IconCapCaretDown class="pointer-events-none" />
-							</button>
 						</div>
 						<button
 							type="button"
-							aria-label="Recording countdown"
-							class="flex justify-center items-center rounded-sm border transition-opacity bg-gray-6 text-gray-12 size-9 hover:opacity-80"
-							onClick={(e) => showMenu(preRecordingMenu, e)}
+							aria-label="Choose recording mode"
+							class="pl-2.5 pr-3 py-1.5 flex items-center border-l border-white/20 bg-white/5 transition-colors group-hover:bg-white/10"
+							onClick={(e) => showMenu(menuModes, e)}
 						>
-							<IconCapGear class="pointer-events-none will-change-transform size-5" />
+							<IconCapCaretDown class="pointer-events-none" />
 						</button>
 					</div>
+					<button
+						type="button"
+						aria-label="Recording countdown"
+						class="flex justify-center items-center rounded-sm border transition-opacity bg-gray-6 text-gray-12 size-9 hover:opacity-80"
+						onClick={(e) => showMenu(preRecordingMenu, e)}
+					>
+						<IconCapGear class="pointer-events-none will-change-transform size-5" />
+					</button>
 				</div>
-				<Show when={(rawOptions.mode as string) !== "screenshot"}>
-					<div class={`${LIQUID_GLASS_SURFACE_CLASS} p-3`}>
-						<div class="grid grid-cols-1 gap-2 w-full">
-							<CameraSelectBase
-								disabled={devices.isPending}
-								options={cameras()}
-								value={selectedCamera() ?? null}
-								onChange={(camera) => {
-									if (!camera) setCamera.mutate({ model: null });
-									else if (camera.model_id)
-										setCamera.mutate({ model: { ModelID: camera.model_id } });
-									else
-										setCamera.mutate({ model: { DeviceID: camera.device_id } });
-								}}
-								permissions={permissions()}
-								PillComponent={InfoPill}
-								class="flex flex-row gap-2 items-center px-2 w-full h-[42px] rounded-lg border border-gray-5 transition-colors cursor-default disabled:opacity-70 bg-gray-3 disabled:text-gray-11 KSelect"
-								iconClass="text-gray-10 size-4"
-							/>
-						</div>
+			</div>
+			<Show when={(rawOptions.mode as string) !== "screenshot"}>
+				<div class={`${LIQUID_GLASS_SURFACE_CLASS} p-3`}>
+					<div class="grid grid-cols-1 gap-2 w-full">
+						<CameraSelectBase
+							disabled={devices.isPending}
+							options={cameras()}
+							value={selectedCamera() ?? null}
+							onChange={(camera) => {
+								if (!camera) setCamera.mutate({ model: null });
+								else if (camera.model_id)
+									setCamera.mutate({ model: { ModelID: camera.model_id } });
+								else
+									setCamera.mutate({ model: { DeviceID: camera.device_id } });
+							}}
+							permissions={permissions()}
+							PillComponent={InfoPill}
+							class="flex flex-row gap-2 items-center px-2 w-full h-[42px] rounded-lg border border-gray-5 transition-colors cursor-default disabled:opacity-70 bg-gray-3 disabled:text-gray-11 KSelect"
+							iconClass="text-gray-10 size-4"
+						/>
 					</div>
-				</Show>
-			</div>
-			<div class="flex justify-center items-center w-full">
-				<div
-					onClick={() => props.setToggleModeSelect?.(true)}
-					class="flex gap-1 justify-center items-center self-center mb-5 transition-opacity duration-200 w-fit hover:opacity-60"
-					classList={{
-						"bg-black/50 p-2 rounded-lg border border-white/10 hover:bg-black/50 hover:opacity-80":
-							props.showBackground,
-						"hover:opacity-60": !props.showBackground,
-					}}
-				>
-					<IconCapInfo class="opacity-70 will-change-transform size-3" />
-					<p class="text-sm text-white drop-shadow-md">
-						<span class="opacity-70">What is </span>
-						<span class="font-medium">{capitalize(rawOptions.mode)} Mode</span>?
-					</p>
 				</div>
-			</div>
-		</>
+			</Show>
+		</div>
 	);
 }

@@ -1,5 +1,6 @@
 #![recursion_limit = "256"]
 
+mod ai_zoom;
 mod api;
 mod audio;
 mod audio_library;
@@ -6302,6 +6303,7 @@ fn specta_builder() -> tauri_specta::Builder {
             recording_settings::set_recording_mode,
             get_system_diagnostics,
             perf_stats::get_performance_stats,
+            ai_zoom::generate_ai_zoom_segments,
             diagnostics::run_diagnostic,
             diagnostics::reveal_diagnostic_report,
             cli::get_cli_install_status,
@@ -6411,6 +6413,7 @@ fn specta_builder() -> tauri_specta::Builder {
             windows::set_teleprompter_window_level,
             windows::set_teleprompter_window_opacity,
             windows::apply_macos_liquid_glass_background,
+            windows::float_macos_window,
             global_message_dialog,
             show_window,
             write_clipboard_string,

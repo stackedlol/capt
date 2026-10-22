@@ -60,6 +60,8 @@ export function ZoomTrack(props: {
 	const [creatingSegmentViaDrag, setCreatingSegmentViaDrag] =
 		createSignal(false);
 	const [isGeneratingAutoZoom, setIsGeneratingAutoZoom] = createSignal(false);
+	const [isPlanningAiZoom, setIsPlanningAiZoom] = createSignal(false);
+	const busy = () => isGeneratingAutoZoom() || isPlanningAiZoom();
 	const [isHoveringGenerateZoomButton, setIsHoveringGenerateZoomButton] =
 		createSignal(false);
 	const [
@@ -97,6 +99,29 @@ export function ZoomTrack(props: {
 			toast.error("Failed to generate zoom segments");
 		} finally {
 			setIsGeneratingAutoZoom(false);
+		}
+	};
+
+	const handlePlanZoomsWithAi = async () => {
+		setIsPlanningAiZoom(true);
+		const toastId = toast.loading("Planning zooms with AI...");
+		try {
+			const zoomSegments = await commands.generateAiZoomSegments();
+			if (zoomSegments.length === 0) {
+				toast.error("AI found nothing worth zooming into", { id: toastId });
+				return;
+			}
+			setProject("timeline", "zoomSegments", zoomSegments);
+			toast.success(
+				`Planned ${zoomSegments.length} zoom${zoomSegments.length === 1 ? "" : "s"}`,
+				{ id: toastId },
+			);
+		} catch (error) {
+			console.error("AI zoom planning failed:", error);
+			const message = typeof error === "string" ? error : "AI planning failed";
+			toast.error(message, { id: toastId });
+		} finally {
+			setIsPlanningAiZoom(false);
 		}
 	};
 
@@ -177,16 +202,23 @@ export function ZoomTrack(props: {
 			onMouseEnter={() => setEditorState("timeline", "hoveredTrack", "zoom")}
 			onMouseLeave={() => setEditorState("timeline", "hoveredTrack", null)}
 			onContextMenu={async (e) => {
-				if (!import.meta.env.DEV) return;
+				if (!hasRecordedCursorData()) return;
 
 				e.preventDefault();
 				const menu = await Menu.new({
 					id: "zoom-track-options",
 					items: [
 						{
+							id: "planZoomsWithAi",
+							text: "Plan zooms with AI",
+							enabled: !busy(),
+							action: () => void handlePlanZoomsWithAi(),
+						},
+						{
 							id: "generateZoomSegments",
-							text: "Generate zoom segments from clicks",
-							action: handleGenerateZoomSegments,
+							text: "Generate zooms from clicks",
+							enabled: !busy(),
+							action: () => void handleGenerateZoomSegments(),
 						},
 					],
 				});
@@ -317,21 +349,31 @@ export function ZoomTrack(props: {
 								onMouseLeave={() => setIsHoveringGenerateZoomButton(false)}
 								onMouseDown={(e) => e.stopPropagation()}
 							>
-								<span>Generate zoom segments automatically</span>
+								<span>Add zooms automatically</span>
 								<button
 									type="button"
 									class="cap-empty-lane-action outline-hidden"
-									disabled={isGeneratingAutoZoom()}
+									disabled={busy()}
+									onClick={() => {
+										void handlePlanZoomsWithAi();
+									}}
+								>
+									· {isPlanningAiZoom() ? "Planning..." : "Plan with AI"}
+								</button>
+								<button
+									type="button"
+									class="cap-empty-lane-action outline-hidden"
+									disabled={busy()}
 									onClick={() => {
 										void handleGenerateZoomSegments();
 									}}
 								>
-									· {isGeneratingAutoZoom() ? "Generating..." : "Generate"}
+									· {isGeneratingAutoZoom() ? "Generating..." : "From clicks"}
 								</button>
 								<button
 									type="button"
 									class="flex shrink-0 justify-center items-center rounded-md outline-hidden text-ed-text-3 hover:text-ed-text-1 hover:bg-ed-ctl-hover size-5 transition-colors"
-									disabled={isGeneratingAutoZoom()}
+									disabled={busy()}
 									aria-label="Dismiss for this session"
 									onClick={() => setSessionDismissedGenerateZoomPrompt(true)}
 								>

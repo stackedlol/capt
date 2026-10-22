@@ -108,6 +108,7 @@ export const animatedGradientsStore = {
 };
 export const automationsStore = declareStore<AutomationsStore>("automations");
 export const hotkeysStore = declareStore<HotkeysStore>("hotkeys");
+export const aiStore = declareStore<{ deepseekApiKey?: string }>("ai");
 export const generalSettingsStore =
 	declareStore<GeneralSettingsStore>("general_settings");
 export const recordingSettingsStore = declareStore<RecordingSettingsStore>(

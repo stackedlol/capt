@@ -564,6 +564,30 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires a graphics adapter; set CAP_GRADIENT_TEST_OUTPUT to write the sheet"]
+    async fn gpu_renders_every_catalog_template() {
+        let constants = test_constants().await;
+        let mut layer = BackgroundLayer::new(&constants.device);
+        let templates = cap_project::animated_gradient_catalog().templates;
+        let (tile_w, tile_h, columns) = (320u32, 180u32, 4u32);
+        let rows = (templates.len() as u32).div_ceil(columns);
+        let mut sheet = image::RgbaImage::new(tile_w * columns, tile_h * rows);
+        for (index, template) in templates.iter().enumerate() {
+            let data = pixels(&mut layer, &constants, &template.config, 0).await;
+            let tile = image::RgbaImage::from_raw(tile_w, tile_h, data).unwrap();
+            let x = (index as u32 % columns) * tile_w;
+            let y = (index as u32 / columns) * tile_h;
+            image::imageops::overlay(&mut sheet, &tile, i64::from(x), i64::from(y));
+        }
+        if let Some(directory) = std::env::var_os("CAP_GRADIENT_TEST_OUTPUT") {
+            std::fs::create_dir_all(&directory).unwrap();
+            sheet
+                .save(std::path::Path::new(&directory).join("gradient-templates.png"))
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
     #[ignore = "requires a graphics adapter"]
     async fn gpu_switching_backgrounds_resizing_and_frame_rate_parity() {
         let constants = test_constants().await;

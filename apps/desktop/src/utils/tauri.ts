@@ -38,6 +38,9 @@ async getSystemDiagnostics() : Promise<SystemDiagnostics> {
 async getPerformanceStats() : Promise<PerformanceStats> {
     return await TAURI_INVOKE("get_performance_stats");
 },
+async generateAiZoomSegments() : Promise<ZoomSegment[]> {
+    return await TAURI_INVOKE("generate_ai_zoom_segments");
+},
 async runDiagnostic(options: DiagnosticOptions) : Promise<DiagnosticRunResult> {
     return await TAURI_INVOKE("run_diagnostic", { options });
 },
@@ -364,6 +367,9 @@ async setTeleprompterWindowOpacity(opacity: number) : Promise<void> {
 },
 async applyMacosLiquidGlassBackground(enabled: boolean, radius: number) : Promise<boolean> {
     return await TAURI_INVOKE("apply_macos_liquid_glass_background", { enabled, radius });
+},
+async floatMacosWindow() : Promise<null> {
+    return await TAURI_INVOKE("float_macos_window");
 },
 async globalMessageDialog(message: string) : Promise<void> {
     await TAURI_INVOKE("global_message_dialog", { message });

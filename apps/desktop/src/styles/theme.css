@@ -602,6 +602,20 @@
 	border-radius: 16px;
 }
 
+[data-macos-native-material="float"] .cap-window-shell,
+[data-macos-native-material="float"] .cap-window-header {
+	background: transparent;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+
+[data-macos-native-material="float"] .cap-window-shell > * + * {
+	border-color: transparent;
+}
+
 [data-macos-native-material="teleprompter"] .cap-window-shell {
 	border-radius: 16px;
 }

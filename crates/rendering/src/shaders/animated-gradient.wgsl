@@ -73,6 +73,51 @@ fn harmonic_field(
 	return HarmonicField(value / weight, gradient / weight);
 }
 
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+	let low = c / 12.92;
+	let high = pow((c + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4));
+	return select(high, low, c <= vec3<f32>(0.04045));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+	let clamped = max(c, vec3<f32>(0.0));
+	let low = clamped * 12.92;
+	let high = 1.055 * pow(clamped, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
+	return select(high, low, clamped <= vec3<f32>(0.0031308));
+}
+
+fn srgb_to_oklab(c: vec3<f32>) -> vec3<f32> {
+	let rgb = srgb_to_linear(c);
+	let l = 0.4122214708 * rgb.r + 0.5363325363 * rgb.g + 0.0514459929 * rgb.b;
+	let m = 0.2119034982 * rgb.r + 0.6806995451 * rgb.g + 0.1073969566 * rgb.b;
+	let s = 0.0883024619 * rgb.r + 0.2817188376 * rgb.g + 0.6299787005 * rgb.b;
+	let l_ = pow(max(l, 0.0), 1.0 / 3.0);
+	let m_ = pow(max(m, 0.0), 1.0 / 3.0);
+	let s_ = pow(max(s, 0.0), 1.0 / 3.0);
+	return vec3<f32>(
+		0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+		1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+		0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+	);
+}
+
+fn oklab_to_srgb(lab: vec3<f32>) -> vec3<f32> {
+	let l_ = lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z;
+	let m_ = lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z;
+	let s_ = lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z;
+	let l = l_ * l_ * l_;
+	let m = m_ * m_ * m_;
+	let s = s_ * s_ * s_;
+	let rgb = vec3<f32>(
+		4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+		-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+	);
+	return linear_to_srgb(rgb);
+}
+
+// Stops are blended in OKLab so midpoints between hues stay clean instead of
+// greying out the way a straight sRGB mix does.
 fn palette(position: f32) -> vec3<f32> {
 	let count = u32(clamp(round(u.output.z), 2.0, 5.0));
 	let first = u.stops[0];
@@ -87,8 +132,9 @@ fn palette(position: f32) -> vec3<f32> {
 		let current = u.stops[index];
 		if (position <= current.w) {
 			let interval = max(current.w - previous.w, 0.00001);
-			let progress = clamp((position - previous.w) / interval, 0.0, 1.0);
-			return mix(previous.rgb, current.rgb, progress);
+			let progress = smoothstep(0.0, 1.0, clamp((position - previous.w) / interval, 0.0, 1.0));
+			let blended = mix(srgb_to_oklab(previous.rgb), srgb_to_oklab(current.rgb), progress);
+			return clamp(oklab_to_srgb(blended), vec3<f32>(0.0), vec3<f32>(1.0));
 		}
 		previous = current;
 	}
@@ -157,17 +203,21 @@ fn hash_u32(input: u32) -> u32 {
 	return value ^ (value >> 16u);
 }
 
+fn grain_hash(pixel: vec2<u32>, seed: u32, salt: u32) -> f32 {
+	let hash = hash_u32(pixel.x * 0x9e3779b9u ^ pixel.y * 0x85ebca6bu ^ seed ^ salt);
+	return f32(hash & 0x00ffffffu) / 16777215.0;
+}
+
+// Static, triangular-distributed grain: it does not crawl while the gradient
+// moves, and two summed hashes give the soft film-like falloff rather than the
+// hard uniform hiss of a single hash.
 fn grain_value(uv: vec2<f32>) -> f32 {
 	let grain_size = max(u.texture.y, 0.5);
 	let pixel = vec2<u32>(floor(uv * max(u.output.xy, vec2<f32>(1.0)) / grain_size));
 	let seed_low = u32(round(max(u.motion.z, 0.0) * 1024.0));
 	let seed_high = u32(round(max(u.motion.w, 0.0) * 1024.0));
 	let seed = seed_low | (seed_high << 16u);
-	let time_cell = u32(max(floor(abs(u.motion.x) * 24.0), 0.0));
-	let hash = hash_u32(
-		pixel.x * 0x9e3779b9u ^ pixel.y * 0x85ebca6bu ^ seed ^ time_cell * 0xc2b2ae35u,
-	);
-	return f32(hash & 0x00ffffffu) / 16777215.0;
+	return grain_hash(pixel, seed, 0x68e31da4u) + grain_hash(pixel, seed, 0xb5297a4du) - 1.0;
 }
 
 @fragment
@@ -184,7 +234,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 		let vibrance = 1.0 + (u.motion.y - 1.0) * (1.0 - clamp(saturation, 0.0, 1.0));
 		color = neutral + (color - neutral) * vibrance;
 	}
-	let grain = (grain_value(input.uv) - 0.5) * u.texture.x * 0.18;
+	let lightness = clamp(dot(color, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+	let midtones = 0.35 + 0.65 * (4.0 * lightness * (1.0 - lightness));
+	let grain = grain_value(input.uv) * u.texture.x * 0.22 * midtones;
 	color += vec3<f32>(grain);
 	return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

@@ -3916,6 +3916,32 @@ impl MonitorExt for Display {
 #[specta::specta]
 #[tauri::command(async)]
 #[instrument(skip(_window))]
+pub async fn float_macos_window(_window: tauri::Window) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let window = _window.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        _window
+            .run_on_main_thread(move || {
+                let result = crate::platform::float_window(&window)
+                    .and_then(|()| window.set_effects(None).map_err(|error| error.to_string()));
+                let _ = tx.send(result);
+            })
+            .map_err(|error| error.to_string())?;
+        return rx
+            .await
+            .map_err(|_| "macOS float task was cancelled".to_string())?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
+#[specta::specta]
+#[tauri::command(async)]
+#[instrument(skip(_window))]
 pub async fn apply_macos_liquid_glass_background(
     _window: tauri::Window,
     _enabled: bool,

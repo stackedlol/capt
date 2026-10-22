@@ -2,8 +2,11 @@ import { cx } from "cva";
 import {
 	type Component,
 	type ComponentProps,
+	createSignal,
 	For,
 	type JSX,
+	onCleanup,
+	onMount,
 	Show,
 } from "solid-js";
 import IconCapLogo from "~icons/cap/logo";
@@ -11,7 +14,20 @@ import IconLucideCamera from "~icons/lucide/camera";
 import IconLucideCrop from "~icons/lucide/crop";
 import IconLucideMonitorPlay from "~icons/lucide/monitor-play";
 import IconLucideSquareDashedMousePointer from "~icons/lucide/square-dashed-mouse-pointer";
-import { DitherField } from "./DitherField";
+import {
+	createMotion,
+	type MotionInput,
+	type MotionState,
+	type Point,
+	settled,
+	step,
+} from "./blob-motion";
+import {
+	type BlobCell,
+	type BlobRenderer,
+	HexBlobCanvas,
+} from "./HexBlobCanvas";
+import { createPerformanceMetrics, MetricBlock } from "./PerformanceStrip";
 
 export type CaptureAction = "studio" | "screenshot";
 export type CaptureTarget = "display" | "area";
@@ -28,11 +44,14 @@ type CaptureCell = Axial & {
 
 const RADIUS = 47;
 const PITCH = 50;
-const CORNER = 5;
+const CORNER = 6;
 const SQRT3 = Math.sqrt(3);
 const HEX_W = RADIUS * 2;
 const HEX_H = RADIUS * SQRT3;
+const APOTHEM = (RADIUS - 0.5) * (SQRT3 / 2) * 0.9;
 const STAGE = 272;
+const SELECT_DELAY_MS = 220;
+const IDLE_FRAME_MS = 1000;
 
 const CAPTURES: CaptureCell[] = [
 	{
@@ -73,35 +92,15 @@ const CAPTURES: CaptureCell[] = [
 	},
 ];
 
-const TAKEN = [{ q: 0, r: 0 }, ...CAPTURES];
-
-const DIRECTIONS: Axial[] = [
-	{ q: 1, r: 0 },
-	{ q: 1, r: -1 },
+const CENTRE: Axial = { q: 0, r: 0 };
+const OPEN_CELLS: Axial[] = [
 	{ q: 0, r: -1 },
-	{ q: -1, r: 0 },
-	{ q: -1, r: 1 },
 	{ q: 0, r: 1 },
 ];
+const CELLS: Axial[] = [...CAPTURES, CENTRE, ...OPEN_CELLS];
+const CENTRE_INDEX = CAPTURES.length;
 
-function ring(radius: number): Axial[] {
-	const out: Axial[] = [];
-	let cell = { q: DIRECTIONS[4].q * radius, r: DIRECTIONS[4].r * radius };
-	for (let side = 0; side < 6; side++) {
-		for (let step = 0; step < radius; step++) {
-			out.push(cell);
-			cell = { q: cell.q + DIRECTIONS[side].q, r: cell.r + DIRECTIONS[side].r };
-		}
-	}
-	return out;
-}
-
-const isFree = (cell: Axial) =>
-	!TAKEN.some((t) => t.q === cell.q && t.r === cell.r);
-const OPEN_CELLS = ring(1).filter(isFree);
-const OUTER_COMB = ring(2);
-
-function centre(cell: Axial) {
+function centre(cell: Axial): Point {
 	return {
 		x: PITCH * 1.5 * cell.q,
 		y: PITCH * SQRT3 * (cell.r + cell.q / 2),
@@ -144,15 +143,12 @@ const LABEL_FIT =
 const HEX_CLIP =
 	"polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)";
 
-function placement(cell: Axial): JSX.CSSProperties {
-	const { x, y } = centre(cell);
-	return {
-		left: `calc(50% + ${x - HEX_W / 2}px)`,
-		top: `calc(50% + ${y - HEX_H / 2}px)`,
-		width: `${HEX_W}px`,
-		height: `${HEX_H}px`,
-	};
-}
+const cellBox: JSX.CSSProperties = {
+	left: `calc(50% - ${HEX_W / 2}px)`,
+	top: `calc(50% - ${HEX_H / 2}px)`,
+	width: `${HEX_W}px`,
+	height: `${HEX_H}px`,
+};
 
 function HexFrame(props: { class?: string }) {
 	return (
@@ -174,105 +170,266 @@ function HexFrame(props: { class?: string }) {
 	);
 }
 
+const TOOL_ROW_Y = -122;
+const TOOL_ROW_X = 88;
+
 export default function RadialCaptureMenu(props: {
 	activeAction: CaptureAction | null;
 	activeTarget: CaptureTarget | null;
 	disabled?: boolean;
 	onSelect: (action: CaptureAction, target: CaptureTarget) => void;
+	topLeft?: JSX.Element;
+	topRight?: JSX.Element;
 }) {
+	const reducedMotion = window.matchMedia(
+		"(prefers-reduced-motion: reduce)",
+	).matches;
+	const [renderer, setRenderer] = createSignal<BlobRenderer | null>(null);
+	const [webgl, setWebgl] = createSignal(true);
+	const [hovered, setHovered] = createSignal<number | null>(null);
+	const [open, setOpen] = createSignal(reducedMotion);
+	const [pointer, setPointer] = createSignal<Point | null>(null);
+	const metrics = createPerformanceMetrics();
+	const elements: (HTMLElement | undefined)[] = [];
+	let stage!: HTMLDivElement;
+	let motion: MotionState = createMotion(CELLS.map(centre), !reducedMotion);
+	let selectTimer: ReturnType<typeof setTimeout> | undefined;
+
 	const isActive = (cell: CaptureCell) =>
 		props.activeAction === cell.action && props.activeTarget === cell.target;
+	const selected = () => CAPTURES.find(isActive) ?? null;
 
-	const focus = () => CAPTURES.find(isActive) ?? null;
+	const cellState = (index: number): BlobCell["state"] => {
+		const capture = CAPTURES[index];
+		if (capture && isActive(capture)) return 2;
+		return hovered() === index ? 1 : 0;
+	};
+
+	const place = (blob: Point, index: number) => {
+		const element = elements[index];
+		if (!element) return;
+		element.style.transform = `translate(${blob.x.toFixed(2)}px, ${blob.y.toFixed(2)}px)`;
+	};
+
+	const paint = () => {
+		const frame = {
+			cells: motion.blobs.map((blob, index) => ({
+				x: blob.x,
+				y: blob.y,
+				apothem: APOTHEM * (hovered() === index ? 1.03 : 1),
+				state: cellState(index),
+			})),
+			cursor: motion.cursor,
+			time: motion.time,
+		};
+		renderer()?.draw(frame);
+		motion.blobs.forEach(place);
+	};
+
+	onMount(() => {
+		let raf = 0;
+		let last = performance.now();
+		let lastPaint = 0;
+
+		const input = (): MotionInput => ({
+			open: open(),
+			hovered: hovered(),
+			pointer: pointer(),
+		});
+
+		const frame = (now: number) => {
+			raf = requestAnimationFrame(frame);
+			if (document.hidden) {
+				last = now;
+				return;
+			}
+			const idle = !document.hasFocus() && settled(motion, input(), 1);
+			if (idle && now - lastPaint < IDLE_FRAME_MS) return;
+			const elapsed = (now - last) / 1000;
+			last = now;
+			lastPaint = now;
+			if (!reducedMotion) motion = step(motion, elapsed, input());
+			paint();
+		};
+
+		if (!open()) requestAnimationFrame(() => setOpen(true));
+		raf = requestAnimationFrame(frame);
+		const onVisibility = () => {
+			last = performance.now();
+		};
+		document.addEventListener("visibilitychange", onVisibility);
+		onCleanup(() => {
+			cancelAnimationFrame(raf);
+			clearTimeout(selectTimer);
+			document.removeEventListener("visibilitychange", onVisibility);
+		});
+	});
+
+	const select = (cell: CaptureCell) => {
+		if (props.disabled || selectTimer) return;
+		if (reducedMotion) {
+			props.onSelect(cell.action, cell.target);
+			return;
+		}
+		setOpen(false);
+		selectTimer = setTimeout(() => {
+			selectTimer = undefined;
+			props.onSelect(cell.action, cell.target);
+			setOpen(true);
+		}, SELECT_DELAY_MS);
+	};
+
+	const trackPointer = (event: PointerEvent) => {
+		const rect = stage.getBoundingClientRect();
+		setPointer({
+			x: event.clientX - rect.left - rect.width / 2,
+			y: event.clientY - rect.top - rect.height / 2,
+		});
+	};
 
 	return (
 		<div
+			ref={stage}
 			class="relative w-full shrink-0 lowercase"
 			style={{ height: `${STAGE}px` }}
+			onPointerMove={trackPointer}
+			onPointerLeave={() => setPointer(null)}
 		>
-			<DitherField class="absolute inset-0 size-full [mask-image:radial-gradient(closest-side,#000_72%,transparent)]" />
+			<Show when={webgl()}>
+				<HexBlobCanvas
+					class="absolute inset-0"
+					onRenderer={(next) => {
+						setRenderer(next);
+						if (next === null && renderer() === null) setWebgl(false);
+					}}
+				/>
+			</Show>
 
 			<div
-				aria-hidden="true"
-				class="pointer-events-none absolute inset-0 overflow-hidden [mask-image:radial-gradient(closest-side,#000_40%,transparent)]"
+				class="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5"
+				style={{
+					left: `calc(50% - ${TOOL_ROW_X}px)`,
+					top: `calc(50% + ${TOOL_ROW_Y}px)`,
+				}}
 			>
-				<For each={OUTER_COMB}>
-					{(cell) => (
-						<div class="absolute" style={placement(cell)}>
-							<HexFrame class="fill-transparent stroke-gray-6 [stroke-width:1]" />
-						</div>
-					)}
-				</For>
+				{props.topLeft}
+			</div>
+			<div
+				class="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5"
+				style={{
+					left: `calc(50% + ${TOOL_ROW_X}px)`,
+					top: `calc(50% + ${TOOL_ROW_Y}px)`,
+				}}
+			>
+				{props.topRight}
 			</div>
 
 			<For each={OPEN_CELLS}>
-				{(cell) => (
+				{(_, index) => (
 					<div
-						aria-hidden="true"
-						class="pointer-events-none absolute"
-						style={placement(cell)}
+						ref={(element) => {
+							elements[CENTRE_INDEX + 1 + index()] = element;
+						}}
+						class="pointer-events-auto absolute flex items-center justify-center"
+						style={cellBox}
 					>
-						<HexFrame class="fill-transparent stroke-gray-6 [stroke-width:1]" />
+						<Show when={!webgl()}>
+							<HexFrame class="fill-gray-1 stroke-gray-6 [stroke-width:1]" />
+						</Show>
+						<MetricBlock
+							metrics={index() === 0 ? metrics.slice(0, 1) : metrics.slice(1)}
+						/>
 					</div>
 				)}
 			</For>
 
 			<div
-				class="absolute flex flex-col items-center justify-center gap-1 text-center"
-				style={placement({ q: 0, r: 0 })}
+				ref={(element) => {
+					elements[CENTRE_INDEX] = element;
+				}}
+				data-tauri-drag-region
+				class="absolute flex cursor-grab flex-col items-center justify-center gap-1 text-center active:cursor-grabbing [&>*]:pointer-events-none"
+				style={{ ...cellBox, "clip-path": HEX_CLIP }}
 			>
-				<HexFrame class="fill-gray-1 stroke-gray-7 [stroke-width:1]" />
-				<Show when={focus()} fallback={<IconCapLogo class="relative size-8" />}>
+				<Show when={!webgl()}>
+					<HexFrame class="fill-gray-1 stroke-gray-7 [stroke-width:1]" />
+				</Show>
+				<Show
+					when={selected()}
+					fallback={
+						<IconCapLogo
+							class={cx("relative size-8", webgl() && "text-[#1c1c1e]")}
+						/>
+					}
+				>
 					{(cell) => (
-						<>
-							<span
-								class={cx(
-									LABEL_FIT,
-									"text-[12px] tracking-[-0.01em] text-gray-12",
-								)}
-							>
-								{cell().label}
-							</span>
-						</>
+						<span
+							class={cx(
+								LABEL_FIT,
+								"text-[12px] tracking-[-0.01em]",
+								webgl() ? "text-[#1c1c1e]" : "text-gray-12",
+							)}
+						>
+							{cell().label}
+						</span>
 					)}
 				</Show>
 			</div>
 
 			<For each={CAPTURES}>
-				{(cell) => (
+				{(cell, index) => (
 					<button
+						ref={(element) => {
+							elements[index()] = element;
+						}}
 						type="button"
 						disabled={props.disabled}
 						aria-pressed={isActive(cell) ? "true" : "false"}
 						aria-label={`${cell.group}: ${cell.label}`}
-						onClick={() => props.onSelect(cell.action, cell.target)}
-						style={{ ...placement(cell), "clip-path": HEX_CLIP }}
+						onClick={() => select(cell)}
+						onPointerEnter={() => setHovered(index())}
+						onPointerLeave={() =>
+							setHovered((current) => (current === index() ? null : current))
+						}
+						onFocus={() => setHovered(index())}
+						onBlur={() =>
+							setHovered((current) => (current === index() ? null : current))
+						}
+						style={{ ...cellBox, "clip-path": HEX_CLIP }}
 						class={cx(
-							"group absolute flex flex-col items-center justify-center gap-1 text-center outline-hidden transition-transform duration-150 active:scale-[0.97]",
+							"group absolute flex flex-col items-center justify-center gap-1 text-center outline-hidden will-change-transform",
 							props.disabled && "pointer-events-none opacity-50",
 						)}
 					>
-						<HexFrame
-							class={cx(
-								"[stroke-width:1] group-focus-visible:stroke-blue-9 group-focus-visible:[stroke-width:2]",
-								isActive(cell)
-									? "fill-blue-3 stroke-blue-8 dark:fill-blue-4"
-									: "fill-gray-2 stroke-gray-6 group-hover:fill-gray-3 group-hover:stroke-gray-8",
-							)}
-						/>
+						<Show when={!webgl()}>
+							<HexFrame
+								class={cx(
+									"[stroke-width:1] group-focus-visible:stroke-blue-9 group-focus-visible:[stroke-width:2]",
+									isActive(cell)
+										? "fill-blue-3 stroke-blue-8 dark:fill-blue-4"
+										: "fill-gray-2 stroke-gray-6 group-hover:fill-gray-3 group-hover:stroke-gray-8",
+								)}
+							/>
+						</Show>
 						<cell.Icon
 							class={cx(
 								"relative size-[18px] transition-colors duration-150",
 								isActive(cell)
-									? "text-blue-10"
-									: "text-gray-10 group-hover:text-gray-12",
+									? "text-[#15255c]"
+									: webgl()
+										? "text-[#6e6e75] group-hover:text-[#1c1c1e]"
+										: "text-gray-10 group-hover:text-gray-12",
 							)}
 						/>
 						<span
 							class={cx(
 								LABEL_FIT,
 								"text-[11px]",
-								isActive(cell) ? "text-blue-11" : "text-gray-12",
+								isActive(cell)
+									? "text-[#22397f]"
+									: webgl()
+										? "text-[#1c1c1e]"
+										: "text-gray-12",
 							)}
 						>
 							{cell.label}

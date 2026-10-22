@@ -28,12 +28,13 @@ import IconLucideVideo from "~icons/lucide/video";
 import { useRecordingOptions } from "../OptionsContext";
 
 const EXPANDED_HEIGHT = 128;
-const EXPANDED_INSET = 10;
+const EXPANDED_INSET = 6;
 const OPEN_DELAY_MS = 90;
 const CLOSE_DELAY_MS = 220;
 const WPM_STEP = 10;
 const EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
 const MAX_POINT = 26;
+const ISLAND_CORNER = 5;
 
 const MODE_LABELS: Record<RecordingMode, string> = {
 	studio: "Studio",
@@ -45,8 +46,29 @@ type Frame = { left: number; top: number; width: number; height: number };
 
 function hexagon(width: number, height: number) {
 	const point = Math.min(height / (2 * Math.sqrt(3)), MAX_POINT);
+	const corner = Math.min(ISLAND_CORNER, point * 0.45, height * 0.2);
 	const mid = height / 2;
-	return `polygon(${point}px 0px, ${width - point}px 0px, ${width}px ${mid}px, ${width - point}px ${height}px, ${point}px ${height}px, 0px ${mid}px)`;
+	const vertices = [
+		[point, 0],
+		[width - point, 0],
+		[width, mid],
+		[width - point, height],
+		[point, height],
+		[0, mid],
+	];
+	let d = "";
+	vertices.forEach(([x, y], i) => {
+		const [px, py] = vertices[(i + 5) % 6];
+		const [nx, ny] = vertices[(i + 1) % 6];
+		const into = Math.hypot(x - px, y - py) || 1;
+		const out = Math.hypot(nx - x, ny - y) || 1;
+		const ax = x + ((px - x) * corner) / into;
+		const ay = y + ((py - y) * corner) / into;
+		const bx = x + ((nx - x) * corner) / out;
+		const by = y + ((ny - y) * corner) / out;
+		d += `${i === 0 ? "M" : "L"}${ax.toFixed(2)} ${ay.toFixed(2)}Q${x.toFixed(2)} ${y.toFixed(2)} ${bx.toFixed(2)} ${by.toFixed(2)}`;
+	});
+	return `path("${d}Z")`;
 }
 
 function Chip(props: {
@@ -63,7 +85,7 @@ function Chip(props: {
 			aria-pressed={props.active ? "true" : "false"}
 			onClick={() => props.onClick()}
 			class={cx(
-				"flex h-7 items-center justify-center gap-1.5 px-2.5 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-blue-8",
+				"flex h-7 items-center justify-center gap-1.5 px-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-blue-8",
 				props.active
 					? "bg-blue-9 text-white"
 					: "bg-white/8 text-white/75 hover:bg-white/14 hover:text-white",
@@ -78,7 +100,7 @@ function Chip(props: {
 function Row(props: { label: string; children: JSX.Element }) {
 	return (
 		<div class="flex items-center gap-2">
-			<span class="w-12 shrink-0 text-[10px] font-semibold text-white/45">
+			<span class="w-11 shrink-0 text-[10px] font-semibold text-white/45">
 				{props.label}
 			</span>
 			<div class="flex flex-1 items-center gap-1">{props.children}</div>
@@ -273,7 +295,7 @@ export default function ControlIsland() {
 								"transition-timing-function": EASE,
 							}}
 							class={cx(
-								"absolute left-0 top-0 flex h-[128px] flex-col justify-center gap-2 px-7 transition-[opacity,transform,filter] motion-reduce:transition-none",
+								"absolute left-0 top-0 flex h-[128px] flex-col justify-center gap-2 px-6 transition-[opacity,transform,filter] motion-reduce:transition-none",
 								expanded()
 									? "translate-y-0 scale-100 opacity-100 blur-[0px] delay-[90ms] duration-300"
 									: "pointer-events-none -translate-y-1.5 scale-[0.98] opacity-0 blur-[2px] duration-150",
@@ -346,17 +368,17 @@ export default function ControlIsland() {
 								<div class="ml-auto flex items-center gap-0.5">
 									<Chip
 										label="Slower"
-										class="px-1.5"
+										class="px-1"
 										onClick={() => stepWpm(-WPM_STEP)}
 									>
 										<IconLucideMinus class="size-3" />
 									</Chip>
-									<span class="w-11 text-center text-[10.5px] font-semibold tabular-nums">
+									<span class="w-14 whitespace-nowrap text-center text-[10px] font-semibold tabular-nums">
 										{prompter()?.wordsPerMinute ?? 150} wpm
 									</span>
 									<Chip
 										label="Faster"
-										class="px-1.5"
+										class="px-1"
 										onClick={() => stepWpm(WPM_STEP)}
 									>
 										<IconLucidePlus class="size-3" />
