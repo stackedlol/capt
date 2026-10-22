@@ -463,10 +463,9 @@ export default function RadialCaptureMenu(props: {
 						<CaptMark
 							state="thinking"
 							variant="brand"
-							cells={28}
-							gap={0.46}
-							dither
-							class="relative size-8 [--capt-band:5.4s] [--capt-sweep:3.6s]"
+							cells={18}
+							gap={0.22}
+							class="relative size-8 [--capt-band:3.6s] [--capt-sweep:2.4s]"
 						/>
 					}
 				>

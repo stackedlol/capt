@@ -94,13 +94,11 @@ export function CaptMark(props: {
 	variant?: "mono" | "brand";
 	cells?: number;
 	gap?: number;
-	dither?: boolean;
 	label?: string;
 }) {
 	const n = () => props.cells ?? 14;
 	const inset = () => (props.gap ?? 0) / 2;
-	const cells = () =>
-		markCells(n(), props.variant !== "brand" || props.dither === true);
+	const cells = () => markCells(n(), props.variant !== "brand");
 	const busy = () => (props.state ?? "idle") !== "idle";
 
 	return (
