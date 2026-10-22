@@ -2,7 +2,6 @@ import { cx } from "cva";
 import {
 	type Component,
 	type ComponentProps,
-	createSignal,
 	For,
 	type JSX,
 	Show,
@@ -181,12 +180,10 @@ export default function RadialCaptureMenu(props: {
 	disabled?: boolean;
 	onSelect: (action: CaptureAction, target: CaptureTarget) => void;
 }) {
-	const [hovered, setHovered] = createSignal<CaptureCell | null>(null);
-
 	const isActive = (cell: CaptureCell) =>
 		props.activeAction === cell.action && props.activeTarget === cell.target;
 
-	const focus = () => hovered() ?? CAPTURES.find(isActive) ?? null;
+	const focus = () => CAPTURES.find(isActive) ?? null;
 
 	return (
 		<div
@@ -249,10 +246,6 @@ export default function RadialCaptureMenu(props: {
 						aria-pressed={isActive(cell) ? "true" : "false"}
 						aria-label={`${cell.group}: ${cell.label}`}
 						onClick={() => props.onSelect(cell.action, cell.target)}
-						onPointerEnter={() => setHovered(cell)}
-						onPointerLeave={() => setHovered(null)}
-						onFocus={() => setHovered(cell)}
-						onBlur={() => setHovered(null)}
 						style={{ ...placement(cell), "clip-path": HEX_CLIP }}
 						class={cx(
 							"group absolute flex flex-col items-center justify-center gap-1 text-center outline-hidden transition-transform duration-150 active:scale-[0.97]",

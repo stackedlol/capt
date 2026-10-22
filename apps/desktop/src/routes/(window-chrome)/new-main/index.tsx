@@ -2238,7 +2238,7 @@ function Page() {
 					});
 				} else {
 					// Rust clears the target mode when it shows the main window
-					// itself (e.g. tray "Open Main Window"), so this dismissal may
+					// itself (e.g. tray "Control Panel"), so this dismissal may
 					// reveal — matching the window Rust just made visible anyway.
 					// Closing the window only hides it, so panel state from the
 					// previous session survives — reset to the main screen.

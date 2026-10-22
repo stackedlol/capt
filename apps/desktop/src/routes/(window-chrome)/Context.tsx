@@ -1,5 +1,11 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { createSignal, type JSX, onCleanup } from "solid-js";
+import {
+	createSignal,
+	getOwner,
+	type JSX,
+	onCleanup,
+	runWithOwner,
+} from "solid-js";
 
 interface WindowChromeState {
 	hideMaximize?: boolean;
@@ -34,6 +40,11 @@ export function WindowChromeHeader(props: {
 	onMaximize?: () => void;
 	children?: JSX.Element;
 }) {
+	// The layout renders these items outside this component, so build them under
+	// this component's owner; otherwise header items can't see providers that
+	// wrap the page (the main window's ControlIsland threw without its
+	// RecordingOptionsProvider, so the window never signalled ready).
+	const owner = getOwner();
 	useWindowChrome({
 		get hideMaximize() {
 			return props.hideMaximize;
@@ -45,7 +56,7 @@ export function WindowChromeHeader(props: {
 			return props.onMaximize;
 		},
 		get items() {
-			return props.children;
+			return runWithOwner(owner, () => props.children);
 		},
 	});
 

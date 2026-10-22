@@ -33,6 +33,7 @@ const OPEN_DELAY_MS = 90;
 const CLOSE_DELAY_MS = 220;
 const WPM_STEP = 10;
 const EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+const MAX_POINT = 26;
 
 const MODE_LABELS: Record<RecordingMode, string> = {
 	studio: "Studio",
@@ -41,6 +42,12 @@ const MODE_LABELS: Record<RecordingMode, string> = {
 };
 
 type Frame = { left: number; top: number; width: number; height: number };
+
+function hexagon(width: number, height: number) {
+	const point = Math.min(height / (2 * Math.sqrt(3)), MAX_POINT);
+	const mid = height / 2;
+	return `polygon(${point}px 0px, ${width - point}px 0px, ${width}px ${mid}px, ${width - point}px ${height}px, ${point}px ${height}px, 0px ${mid}px)`;
+}
 
 function Chip(props: {
 	active?: boolean;
@@ -200,7 +207,7 @@ export default function ControlIsland() {
 
 	return (
 		<>
-			<div ref={anchorRef} class="h-[22px] w-[96px] shrink-0" />
+			<div ref={anchorRef} class="h-[22px] w-[104px] shrink-0" />
 			<Portal>
 				<div
 					role="group"
@@ -217,135 +224,146 @@ export default function ControlIsland() {
 						width: `${frame()?.width ?? 0}px`,
 						height: `${frame()?.height ?? 0}px`,
 						visibility: frame() ? "visible" : "hidden",
-						"transition-property": "left, top, width, height, box-shadow",
+						filter: expanded()
+							? "drop-shadow(0 12px 22px rgba(0, 0, 0, 0.32))"
+							: "drop-shadow(0 0 0 rgba(0, 0, 0, 0))",
+						"transition-property": "left, top, width, height, filter",
 						"transition-duration": expanded() ? "420ms" : "340ms",
 						"transition-timing-function": EASE,
 					}}
 					class={cx(
-						"fixed z-60 select-none overflow-hidden bg-black font-sans text-white will-change-[left,top,width,height] motion-reduce:transition-none! [contain:layout_paint]",
-						expanded()
-							? "shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
-							: "cursor-pointer shadow-none",
+						"fixed z-60 select-none font-sans text-white will-change-[left,top,width,height] motion-reduce:transition-none!",
+						!expanded() && "cursor-pointer",
 					)}
 				>
 					<div
-						aria-hidden={expanded() ? "true" : "false"}
-						style={{ "transition-timing-function": EASE }}
-						class={cx(
-							"absolute inset-x-0 top-0 flex h-[22px] items-center justify-center gap-1.5 px-2.5 transition-[opacity,transform] motion-reduce:transition-none",
-							expanded()
-								? "pointer-events-none -translate-y-1 opacity-0 duration-100"
-								: "translate-y-0 opacity-100 delay-75 duration-200",
-						)}
-					>
-						<IconCapLogo class="size-3 shrink-0 brightness-0 invert" />
-						<span class="truncate text-[10.5px] font-semibold">
-							{MODE_LABELS[mode()]}
-						</span>
-						<span
-							class={cx(
-								"size-1 shrink-0 bg-blue-9 transition-opacity duration-200",
-								prompterOpen() ? "opacity-100" : "opacity-0",
-							)}
-						/>
-					</div>
-					<div
-						inert={expanded() ? undefined : true}
 						style={{
-							width: `${viewportWidth() - EXPANDED_INSET * 2}px`,
+							"clip-path": hexagon(frame()?.width ?? 0, frame()?.height ?? 0),
+							"transition-property": "clip-path",
+							"transition-duration": expanded() ? "420ms" : "340ms",
 							"transition-timing-function": EASE,
 						}}
-						class={cx(
-							"absolute left-0 top-0 flex h-[128px] flex-col justify-center gap-2 px-3 transition-[opacity,transform,filter] motion-reduce:transition-none",
-							expanded()
-								? "translate-y-0 scale-100 opacity-100 blur-[0px] delay-[90ms] duration-300"
-								: "pointer-events-none -translate-y-1.5 scale-[0.98] opacity-0 blur-[2px] duration-150",
-						)}
+						class="absolute inset-0 overflow-hidden bg-black motion-reduce:transition-none! [contain:layout_paint]"
 					>
-						<Row label="Mode">
-							<Chip
-								label="Studio mode"
-								active={mode() === "studio"}
-								onClick={() => void selectMode("studio")}
-							>
-								<IconLucideVideo class="size-3.5" />
-								Studio
-							</Chip>
-							<Chip
-								label="Screenshot mode"
-								active={mode() === "screenshot"}
-								onClick={() => void selectMode("screenshot")}
-							>
-								<IconLucideCamera class="size-3.5" />
-								Screenshot
-							</Chip>
-						</Row>
-						<Row label="Capture">
-							<Chip
-								label="Capture whole screen"
-								onClick={() => void capture("display")}
-							>
-								<IconLucideMonitor class="size-3.5" />
-								Screen
-							</Chip>
-							<Chip
-								label="Capture custom area"
-								onClick={() => void capture("area")}
-							>
-								<IconLucideSquareDashed class="size-3.5" />
-								Area
-							</Chip>
-						</Row>
-						<Row label="Prompter">
-							<Chip
-								label={
-									prompterOpen() ? "Close teleprompter" : "Open teleprompter"
-								}
-								active={prompterOpen()}
-								onClick={() => void togglePrompter()}
-							>
-								<IconLucideScanText class="size-3.5" />
-							</Chip>
-							<Chip
-								label="Mirror text"
-								active={prompter()?.mirror}
-								onClick={() =>
-									void updatePrompter({ mirror: !prompter()?.mirror })
-								}
-							>
-								<IconLucideFlipHorizontal class="size-3.5" />
-							</Chip>
-							<Chip
-								label="Cue markers"
-								active={prompter()?.showCueMarkers}
-								onClick={() =>
-									void updatePrompter({
-										showCueMarkers: !prompter()?.showCueMarkers,
-									})
-								}
-							>
-								<IconLucideListOrdered class="size-3.5" />
-							</Chip>
-							<div class="ml-auto flex items-center gap-0.5">
+						<div
+							aria-hidden={expanded() ? "true" : "false"}
+							style={{ "transition-timing-function": EASE }}
+							class={cx(
+								"absolute inset-x-0 top-0 flex h-[22px] items-center justify-center gap-1.5 px-3 transition-[opacity,transform] motion-reduce:transition-none",
+								expanded()
+									? "pointer-events-none -translate-y-1 opacity-0 duration-100"
+									: "translate-y-0 opacity-100 delay-75 duration-200",
+							)}
+						>
+							<IconCapLogo class="size-3 shrink-0 brightness-0 invert" />
+							<span class="truncate text-[10.5px] font-semibold">
+								{MODE_LABELS[mode()]}
+							</span>
+							<span
+								class={cx(
+									"size-1 shrink-0 bg-blue-9 transition-opacity duration-200",
+									prompterOpen() ? "opacity-100" : "opacity-0",
+								)}
+							/>
+						</div>
+						<div
+							inert={expanded() ? undefined : true}
+							style={{
+								width: `${viewportWidth() - EXPANDED_INSET * 2}px`,
+								"transition-timing-function": EASE,
+							}}
+							class={cx(
+								"absolute left-0 top-0 flex h-[128px] flex-col justify-center gap-2 px-7 transition-[opacity,transform,filter] motion-reduce:transition-none",
+								expanded()
+									? "translate-y-0 scale-100 opacity-100 blur-[0px] delay-[90ms] duration-300"
+									: "pointer-events-none -translate-y-1.5 scale-[0.98] opacity-0 blur-[2px] duration-150",
+							)}
+						>
+							<Row label="Mode">
 								<Chip
-									label="Slower"
-									class="px-1.5"
-									onClick={() => stepWpm(-WPM_STEP)}
+									label="Studio mode"
+									active={mode() === "studio"}
+									onClick={() => void selectMode("studio")}
 								>
-									<IconLucideMinus class="size-3" />
+									<IconLucideVideo class="size-3.5" />
+									Studio
 								</Chip>
-								<span class="w-11 text-center text-[10.5px] font-semibold tabular-nums">
-									{prompter()?.wordsPerMinute ?? 150} wpm
-								</span>
 								<Chip
-									label="Faster"
-									class="px-1.5"
-									onClick={() => stepWpm(WPM_STEP)}
+									label="Screenshot mode"
+									active={mode() === "screenshot"}
+									onClick={() => void selectMode("screenshot")}
 								>
-									<IconLucidePlus class="size-3" />
+									<IconLucideCamera class="size-3.5" />
+									Screenshot
 								</Chip>
-							</div>
-						</Row>
+							</Row>
+							<Row label="Capture">
+								<Chip
+									label="Capture whole screen"
+									onClick={() => void capture("display")}
+								>
+									<IconLucideMonitor class="size-3.5" />
+									Screen
+								</Chip>
+								<Chip
+									label="Capture custom area"
+									onClick={() => void capture("area")}
+								>
+									<IconLucideSquareDashed class="size-3.5" />
+									Area
+								</Chip>
+							</Row>
+							<Row label="Prompter">
+								<Chip
+									label={
+										prompterOpen() ? "Close teleprompter" : "Open teleprompter"
+									}
+									active={prompterOpen()}
+									onClick={() => void togglePrompter()}
+								>
+									<IconLucideScanText class="size-3.5" />
+								</Chip>
+								<Chip
+									label="Mirror text"
+									active={prompter()?.mirror}
+									onClick={() =>
+										void updatePrompter({ mirror: !prompter()?.mirror })
+									}
+								>
+									<IconLucideFlipHorizontal class="size-3.5" />
+								</Chip>
+								<Chip
+									label="Cue markers"
+									active={prompter()?.showCueMarkers}
+									onClick={() =>
+										void updatePrompter({
+											showCueMarkers: !prompter()?.showCueMarkers,
+										})
+									}
+								>
+									<IconLucideListOrdered class="size-3.5" />
+								</Chip>
+								<div class="ml-auto flex items-center gap-0.5">
+									<Chip
+										label="Slower"
+										class="px-1.5"
+										onClick={() => stepWpm(-WPM_STEP)}
+									>
+										<IconLucideMinus class="size-3" />
+									</Chip>
+									<span class="w-11 text-center text-[10.5px] font-semibold tabular-nums">
+										{prompter()?.wordsPerMinute ?? 150} wpm
+									</span>
+									<Chip
+										label="Faster"
+										class="px-1.5"
+										onClick={() => stepWpm(WPM_STEP)}
+									>
+										<IconLucidePlus class="size-3" />
+									</Chip>
+								</div>
+							</Row>
+						</div>
 					</div>
 				</div>
 			</Portal>

@@ -65,9 +65,14 @@ export function ringRects(
 	{ x = 0, y = 0, cell = 1, fill = toneFill, mono = false, gap = 0 },
 ) {
 	const inset = (cell * gap) / 2;
+	// Checker the pastel band by distance from the centre rather than from the
+	// top-left cell: on an even grid a plain checkerboard starts each corner on a
+	// different colour, while this mirrors identically into all four corners.
+	const fold = (i) => (Math.abs(2 * i - (field.n - 1)) - 1) / 2;
 	const rects = [];
 	for (const p of field.cells) {
-		if (mono && p.tone === "pastel" && (p.col + p.row) % 2 === 1) continue;
+		if (mono && p.tone === "pastel" && (fold(p.col) + fold(p.row)) % 2 === 1)
+			continue;
 		rects.push({
 			x: x + p.col * cell + inset,
 			y: y + p.row * cell + inset,
