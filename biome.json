@@ -12,7 +12,6 @@
 			"!**/queries.ts",
 			"!apps/desktop/src/utils/tauri.ts",
 			"!apps/desktop/src/global.d.ts",
-			"!apps/web/public/gif.worker.js",
 			"!packages/ui-solid/src/auto-imports.d.ts",
 			"!capcodec/**/*.tov",
 			"!capcodec/**/*.py",

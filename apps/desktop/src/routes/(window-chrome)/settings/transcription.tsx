@@ -181,7 +181,7 @@ function Inner(props: { initialStore: GeneralSettingsStore | null }) {
 									{(hint) => (
 										<button
 											type="button"
-											class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs text-gray-12 bg-gray-3 border border-gray-4 hover:bg-gray-4 transition-colors"
+											class="flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-xs text-gray-12 bg-gray-3 border border-gray-4 hover:bg-gray-4 transition-colors"
 											onClick={() => removeHint(hint)}
 										>
 											<span>{hint}</span>

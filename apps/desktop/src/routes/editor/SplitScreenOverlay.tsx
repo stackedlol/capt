@@ -306,7 +306,7 @@ function Pane(props: {
 				{(handle) => (
 					<div
 						class={cx(
-							"absolute w-3 h-3 rounded-full border border-white bg-blue-9 shadow-sm opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:scale-125",
+							"absolute w-3 h-3 rounded-sm border border-white bg-blue-9 shadow-sm opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:scale-125",
 							handle.class,
 						)}
 						onMouseDown={props.makeResize(handle.dir)}

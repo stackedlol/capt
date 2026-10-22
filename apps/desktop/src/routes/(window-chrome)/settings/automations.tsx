@@ -217,7 +217,8 @@ const TEMPLATES: Template[] = [
 	{
 		id: "ocr-screenshot",
 		name: "Pull the text out of screenshots",
-		description: "Cap reads the text in your screenshot and copies it for you.",
+		description:
+			"capt reads the text in your screenshot and copies it for you.",
 		icon: IconLucideScanText,
 		build: () =>
 			buildRule({
@@ -287,7 +288,7 @@ const TEMPLATES: Template[] = [
 				actions: [
 					{
 						type: "notify",
-						titleTemplate: "Cap",
+						titleTemplate: "capt",
 						bodyTemplate: "Your recording is ready to share.",
 					},
 				],
@@ -520,7 +521,7 @@ export default function AutomationsSettings() {
 			<SettingsPageContent>
 				<Section
 					title="Automations"
-					description="Run actions automatically when something happens in Cap. Rules are shared with the Cap CLI."
+					description="Run actions automatically when something happens in capt. Rules are shared with the capt CLI."
 				>
 					<Suspense
 						fallback={<div class="h-24 rounded-xl bg-gray-3 animate-pulse" />}
@@ -581,7 +582,7 @@ function EmptyState(props: { onCreate: () => void }) {
 	return (
 		<SectionCard padded>
 			<div class="flex flex-col gap-2 items-center py-6 text-center">
-				<div class="flex justify-center items-center mb-1 rounded-full size-11 bg-gray-3 text-gray-10">
+				<div class="flex justify-center items-center mb-1 rounded-sm size-11 bg-gray-3 text-gray-10">
 					<IconLucideZap class="size-5" />
 				</div>
 				<p class="text-[13px] font-medium text-gray-12">No automations yet</p>

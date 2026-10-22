@@ -592,7 +592,7 @@ export function ClipsSidebar(props: { class?: string }) {
 						when={segments().length > 0}
 						fallback={
 							<div class="flex flex-col gap-2 justify-center items-center px-4 py-12 text-center">
-								<div class="flex justify-center items-center rounded-full size-10 bg-gray-3 text-gray-9">
+								<div class="flex justify-center items-center rounded-sm size-10 bg-gray-3 text-gray-9">
 									<IconCapClapperboard class="size-5" />
 								</div>
 								<p class="text-sm font-medium text-gray-12">No clips yet</p>
@@ -618,10 +618,10 @@ export function ClipsSidebar(props: { class?: string }) {
 									return (
 										<div class="relative">
 											<Show when={showTopBar()}>
-												<div class="absolute right-0 -top-1 left-0 z-10 h-0.5 rounded-full bg-blue-9" />
+												<div class="absolute right-0 -top-1 left-0 z-10 h-0.5 rounded-[1px] bg-blue-9" />
 											</Show>
 											<Show when={showBottomBar()}>
-												<div class="absolute right-0 -bottom-1 left-0 z-10 h-0.5 rounded-full bg-blue-9" />
+												<div class="absolute right-0 -bottom-1 left-0 z-10 h-0.5 rounded-[1px] bg-blue-9" />
 											</Show>
 											<div
 												data-clip-card

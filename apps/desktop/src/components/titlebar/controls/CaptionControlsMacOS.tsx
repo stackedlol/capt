@@ -37,14 +37,10 @@ export default function CaptionControlsMacOS(
 	const showMinimize = () => local.showMinimize ?? true;
 	const showZoom = () => local.showZoom ?? true;
 
-	const handleClose = async () => {
-		currentWindow.close();
-	};
-
 	return (
 		<div
 			class={cx(
-				"flex flex-row items-center gap-2.5 h-full cursor-default select-none",
+				"flex flex-row items-center gap-2 h-full cursor-default select-none",
 				local.class,
 			)}
 			onMouseEnter={() => setHovered(true)}
@@ -55,7 +51,7 @@ export default function CaptionControlsMacOS(
 				type="close"
 				focused={focused()}
 				hovered={hovered()}
-				onClick={handleClose}
+				onClick={() => currentWindow.close()}
 			/>
 			<Show when={showMinimize()}>
 				<TrafficLightButton
@@ -87,86 +83,73 @@ interface TrafficLightButtonProps {
 	onClick: () => void;
 }
 
-function TrafficLightButton(props: TrafficLightButtonProps) {
-	const colors = {
-		close: {
-			bg: "#FF5F57",
-			bgHover: "#FF5F57",
-			iconColor: "rgba(0, 0, 0, 0.5)",
-		},
-		minimize: {
-			bg: "#FEBC2E",
-			bgHover: "#FEBC2E",
-			iconColor: "rgba(0, 0, 0, 0.5)",
-		},
-		zoom: {
-			bg: "#28C840",
-			bgHover: "#28C840",
-			iconColor: "rgba(0, 0, 0, 0.5)",
-		},
-	};
+const TRAFFIC_LIGHTS = {
+	close: { fill: "#ff5f57", edge: "#e2463f", label: "Close window" },
+	minimize: { fill: "#febc2e", edge: "#dfa023", label: "Minimize window" },
+	zoom: {
+		fill: "#28c840",
+		edge: "#1dad2b",
+		label: "Expand or collapse window",
+	},
+} as const;
 
-	const color = () => colors[props.type];
+function TrafficLightButton(props: TrafficLightButtonProps) {
+	const light = () => TRAFFIC_LIGHTS[props.type];
+	const active = () => props.focused;
 
 	return (
 		<button
 			type="button"
-			aria-label={
-				props.type === "close"
-					? "Close window"
-					: props.type === "minimize"
-						? "Minimize window"
-						: "Expand or collapse window"
-			}
-			class={cx(
-				"size-3.5 rounded-full flex items-center justify-center transition-colors duration-100",
-				"hover:brightness-95 active:brightness-90",
-			)}
+			aria-label={light().label}
+			class="relative flex size-3 items-center justify-center rounded-sm transition-[filter] duration-100 active:brightness-[0.82]"
 			style={{
-				"background-color": props.focused ? color().bg : "#DCDCDC",
+				"background-color": active() ? light().fill : "var(--gray-6)",
+				"box-shadow": active()
+					? `inset 0 0 0 0.5px ${light().edge}`
+					: "inset 0 0 0 0.5px rgba(0, 0, 0, 0.12)",
 			}}
 			onClick={(e) => {
 				e.stopPropagation();
 				props.onClick();
 			}}
 		>
-			<Show when={props.hovered && props.focused}>
-				<TrafficLightIcon type={props.type} color={color().iconColor} />
+			<Show when={props.hovered && active()}>
+				<TrafficLightGlyph type={props.type} />
 			</Show>
 		</button>
 	);
 }
 
-interface TrafficLightIconProps {
-	type: "close" | "minimize" | "zoom";
-	color: string;
-}
-
-function TrafficLightIcon(props: TrafficLightIconProps) {
+function TrafficLightGlyph(props: { type: "close" | "minimize" | "zoom" }) {
 	return (
 		<svg
-			width={props.type === "zoom" ? "8" : "10"}
-			height={props.type === "zoom" ? "8" : "10"}
+			width="8"
+			height="8"
 			viewBox="0 0 8 8"
 			fill="none"
 			xmlns="http://www.w3.org/2000/svg"
+			aria-hidden="true"
 		>
 			{props.type === "close" && (
 				<path
-					d="M1.182 1.182a.625.625 0 0 1 .884 0L4 3.116l1.934-1.934a.625.625 0 1 1 .884.884L4.884 4l1.934 1.934a.625.625 0 1 1-.884.884L4 4.884 2.066 6.818a.625.625 0 1 1-.884-.884L3.116 4 1.182 2.066a.625.625 0 0 1 0-.884Z"
-					fill={props.color}
+					d="M1.5 1.5l5 5M6.5 1.5l-5 5"
+					stroke="rgba(0, 0, 0, 0.55)"
+					stroke-width="1.2"
+					stroke-linecap="round"
 				/>
 			)}
 			{props.type === "minimize" && (
 				<path
-					d="M1 4a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 1 4Z"
-					fill={props.color}
+					d="M1.5 4h5"
+					stroke="rgba(0, 0, 0, 0.55)"
+					stroke-width="1.2"
+					stroke-linecap="round"
 				/>
 			)}
 			{props.type === "zoom" && (
 				<path
-					d="M.75.75H6.5L.75 6.5V.75ZM7.25 7.25H1.5l5.75-5.75v5.75Z"
-					fill={props.color}
+					d="M1.5 1.5h3.2L1.5 4.7V1.5ZM6.5 6.5H3.3L6.5 3.3v3.2Z"
+					fill="rgba(0, 0, 0, 0.55)"
 				/>
 			)}
 		</svg>

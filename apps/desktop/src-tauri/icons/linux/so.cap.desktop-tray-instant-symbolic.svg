@@ -1,3 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-	<path class="ColorScheme-Text" style="fill:currentColor" d="M9.25 1.25 3 8.55h4.1L5.95 14.8 13 6.25H8.85l.4-5Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" shape-rendering="crispEdges">
+	<g class="ColorScheme-Text" style="fill:currentColor"><path d="M17 17L17 16" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/> <path d="M15 20L15 19" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/> <path d="M19 14L19 13" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/> <path d="M21 11L21 9L14 9L14 7" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/> <path d="M6 7L6 9" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/> <path d="M4 11V14H11V22H13" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/> <path d="M8 5V2H16V5" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/></g>
 </svg>

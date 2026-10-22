@@ -71,7 +71,7 @@ function PreviewSkeleton() {
 			<div class="flex-1 relative flex items-center justify-center overflow-hidden bg-gray-2 dark:bg-gray-3">
 				<div class="absolute left-4 bottom-4 z-10 flex items-center gap-2 bg-gray-1 dark:bg-gray-3 rounded-lg shadow-xs p-1 border border-gray-4">
 					<SkeletonButton />
-					<SkeletonPulse class="w-20 h-2 rounded-full" />
+					<SkeletonPulse class="w-20 h-2 rounded-[1px]" />
 					<SkeletonButton />
 				</div>
 

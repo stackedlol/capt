@@ -9,10 +9,6 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
 	invoke: fixture.invoke,
 }));
 
-vi.mock("./web-api", () => ({
-	orgCustomDomainClient: {},
-	protectedHeaders: vi.fn(),
-}));
 
 import { revealRecordingWindow } from "./queries";
 

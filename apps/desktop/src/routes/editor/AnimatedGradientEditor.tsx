@@ -496,7 +496,7 @@ export function AnimatedGradientEditor(props: {
 														title="Delete"
 														aria-label={`Delete ${preset.name}`}
 														disabled={deletingId() !== null}
-														class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-ed-text-1 text-ed-card shadow-ed-card outline-hidden transition-colors duration-150 hover:bg-red-11 hover:text-white disabled:opacity-40"
+														class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-sm bg-ed-text-1 text-ed-card shadow-ed-card outline-hidden transition-colors duration-150 hover:bg-red-11 hover:text-white disabled:opacity-40"
 														onClick={() => void deletePreset(preset.id)}
 													>
 														<IconLucideX class="size-3" />
@@ -563,7 +563,7 @@ export function AnimatedGradientEditor(props: {
 													aria-label={`Colour ${index + 1}`}
 													aria-pressed={selected()}
 													class={cx(
-														"absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full p-0.5 shadow-md outline-hidden transition-[width,height] focus-visible:ring-2 focus-visible:ring-ed-accent",
+														"absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm p-0.5 shadow-md outline-hidden transition-[width,height] focus-visible:ring-2 focus-visible:ring-ed-accent",
 														selected()
 															? "size-6 bg-ed-accent"
 															: "size-5 bg-white",
@@ -602,12 +602,12 @@ export function AnimatedGradientEditor(props: {
 												>
 													<span
 														class={cx(
-															"flex size-full items-center justify-center rounded-full",
+															"flex size-full items-center justify-center rounded-sm",
 															selected() && "bg-white p-0.5",
 														)}
 													>
 														<span
-															class="size-full rounded-full"
+															class="size-full rounded-sm"
 															style={{
 																background: `rgb(${stop().color.join(",")})`,
 															}}

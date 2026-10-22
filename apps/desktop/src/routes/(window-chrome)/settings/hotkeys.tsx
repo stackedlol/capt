@@ -102,7 +102,7 @@ function Inner(props: { initialStore: HotkeysStore | null }) {
 			<SettingsPageContent>
 				<Section
 					title="Shortcuts"
-					description="Configure system-wide keyboard shortcuts to control Cap."
+					description="Configure system-wide keyboard shortcuts to control capt."
 				>
 					<SectionCard class="flex flex-col gap-3 p-4">
 						<Index each={actions()}>

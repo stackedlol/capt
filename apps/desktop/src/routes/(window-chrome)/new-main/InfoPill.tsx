@@ -11,7 +11,7 @@ export default function InfoPill(
 			{...props}
 			type="button"
 			class={cx(
-				"inline-flex items-center justify-center min-w-[40px] h-[24px] px-2.5 rounded-full text-[11px] font-medium leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-9 focus-visible:ring-offset-1 focus-visible:ring-offset-gray-1",
+				"inline-flex items-center justify-center min-w-[40px] h-[24px] px-2.5 rounded-sm text-[11px] font-medium leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-9 focus-visible:ring-offset-1 focus-visible:ring-offset-gray-1",
 				props.variant === "blue" && "bg-blue-9 text-white hover:bg-blue-10",
 				props.variant === "red" && "bg-red-9 text-white hover:bg-red-10",
 				props.variant === "gray" &&

@@ -1,9 +1,0 @@
-[build]
-dockerfilePath = "apps/media-server/Dockerfile"
-
-[deploy]
-startCommand = "bun run src/index.ts"
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "ALWAYS"
-restartPolicyMaxRetries = 50

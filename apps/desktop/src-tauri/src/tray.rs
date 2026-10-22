@@ -80,7 +80,6 @@ pub enum TrayItem {
     ModeStudio,
     ModeInstant,
     ModeScreenshot,
-    RequestPermissions,
 }
 
 impl From<TrayItem> for MenuId {
@@ -103,7 +102,6 @@ impl From<TrayItem> for MenuId {
             TrayItem::ModeStudio => "mode_studio",
             TrayItem::ModeInstant => "mode_instant",
             TrayItem::ModeScreenshot => "mode_screenshot",
-            TrayItem::RequestPermissions => "request_permissions",
         }
         .into()
     }
@@ -134,7 +132,6 @@ impl TryFrom<MenuId> for TrayItem {
             "mode_studio" => Ok(TrayItem::ModeStudio),
             "mode_instant" => Ok(TrayItem::ModeInstant),
             "mode_screenshot" => Ok(TrayItem::ModeScreenshot),
-            "request_permissions" => Ok(TrayItem::RequestPermissions),
             value => Err(format!("Invalid tray item id {value}")),
         }
     }
@@ -420,13 +417,6 @@ fn get_current_mode(app: &AppHandle) -> RecordingMode {
         .unwrap_or_default()
 }
 
-fn should_use_minimal_onboarding_tray_menu(app: &AppHandle) -> bool {
-    if !app.webview_windows().contains_key("onboarding") {
-        return false;
-    }
-    !crate::permissions::do_permissions_check(false).necessary_granted()
-}
-
 pub(crate) struct TrayMenuCache {
     cache: Arc<Mutex<PreviousItemsCache>>,
 }
@@ -469,30 +459,6 @@ fn create_mode_submenu(app: &AppHandle) -> tauri::Result<Submenu<tauri::Wry>> {
 }
 
 fn build_tray_menu(app: &AppHandle, cache: &PreviousItemsCache) -> tauri::Result<Menu<tauri::Wry>> {
-    if should_use_minimal_onboarding_tray_menu(app) {
-        return Menu::with_items(
-            app,
-            &[
-                &MenuItem::with_id(
-                    app,
-                    TrayItem::RequestPermissions,
-                    "Request Permissions",
-                    true,
-                    None::<&str>,
-                )?,
-                &PredefinedMenuItem::separator(app)?,
-                &MenuItem::with_id(
-                    app,
-                    "version",
-                    format!("Cap v{}", env!("CARGO_PKG_VERSION")),
-                    false,
-                    None::<&str>,
-                )?,
-                &MenuItem::with_id(app, TrayItem::Quit, "Quit Cap", true, None::<&str>)?,
-            ],
-        );
-    }
-
     let previous_submenu = create_previous_submenu(app, cache)?;
     let mode_submenu = create_mode_submenu(app)?;
     let current_mode = get_current_mode(app);
@@ -710,15 +676,8 @@ pub fn get_tray_icon() -> &'static [u8] {
     include_bytes!("../icons/tray-default-icon.png")
 }
 
-pub fn get_mode_icon(mode: RecordingMode) -> &'static [u8] {
-    if cfg!(target_os = "windows") {
-        return get_tray_icon();
-    }
-    match mode {
-        RecordingMode::Studio => include_bytes!("../icons/tray-default-icon-studio.png"),
-        RecordingMode::Instant => include_bytes!("../icons/tray-default-icon-instant.png"),
-        RecordingMode::Screenshot => include_bytes!("../icons/tray-default-icon-screenshot.png"),
-    }
+pub fn get_mode_icon(_mode: RecordingMode) -> &'static [u8] {
+    get_tray_icon()
 }
 
 #[cfg(target_os = "linux")]
@@ -1019,12 +978,6 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 }
                 Ok(TrayItem::ModeScreenshot) => {
                     handle_mode_selection(app, RecordingMode::Screenshot, &cache);
-                }
-                Ok(TrayItem::RequestPermissions) => {
-                    let app = app.clone();
-                    tokio::spawn(async move {
-                        let _ = ShowCapWindow::Onboarding.show(&app).await;
-                    });
                 }
                 _ => {}
             }

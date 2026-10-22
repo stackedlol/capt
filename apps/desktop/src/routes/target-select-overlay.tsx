@@ -1,5 +1,4 @@
 import { Button } from "@cap/ui-solid";
-import { Popover } from "@kobalte/core/popover";
 import { createEventListener } from "@solid-primitives/event-listener";
 import { createElementSize } from "@solid-primitives/resize-observer";
 import { makePersisted } from "@solid-primitives/storage";
@@ -10,7 +9,6 @@ import {
 	type PhysicalPosition,
 	type PhysicalSize,
 } from "@tauri-apps/api/dpi";
-import { emit } from "@tauri-apps/api/event";
 import {
 	CheckMenuItem,
 	Menu,
@@ -25,7 +23,6 @@ import {
 	createSignal,
 	For,
 	Match,
-	mergeProps,
 	onCleanup,
 	onMount,
 	Show,
@@ -34,20 +31,6 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import toast from "solid-toast";
-import {
-	CAMERA_DEFAULT_SIZE,
-	CAMERA_PRESET_LARGE,
-	CAMERA_WINDOW_STATE_STORAGE_KEY,
-	CameraPreviewToolbar,
-	CameraResizeHandles,
-	type CameraWindowState,
-	cameraBorderRadius,
-	cameraPreviewDimensions,
-	cameraToolbarScale,
-	clampCameraSize,
-	getDefaultCameraWindowState,
-	normalizeBackgroundBlurMode,
-} from "~/components/CameraPreviewChrome";
 import {
 	CROP_ZERO,
 	type CropBounds,
@@ -58,11 +41,7 @@ import {
 } from "~/components/Cropper";
 import ModeSelect from "~/components/ModeSelect";
 import SelectionHint from "~/components/selection-hint";
-import {
-	authStore,
-	generalSettingsStore,
-	recordingStartSafetyStore,
-} from "~/store";
+import { generalSettingsStore } from "~/store";
 import {
 	AREA_SELECTION_STORAGE_KEY,
 	AREA_SELECTION_STORAGE_SYNC,
@@ -75,20 +54,9 @@ import {
 } from "~/utils/area-selection";
 import { getCameraWindow } from "~/utils/camera-window";
 import { createDevicesQuery } from "~/utils/devices";
-import { shouldConfirmRecordingWithoutMicrophone } from "~/utils/general-settings";
-import {
-	createCameraMutation,
-	createMicrophoneMutation,
-	createOptionsQuery,
-	createOrganizationsQuery,
-} from "~/utils/queries";
+import { createCameraMutation, createOptionsQuery } from "~/utils/queries";
 import { isRecordingStartCancelled } from "~/utils/recording";
 import { createRecordingMenuPopup } from "~/utils/recording-menu";
-import {
-	type CanvasControls,
-	createImageDataWS,
-	type FrameData,
-} from "~/utils/socket";
 import {
 	type CameraInfo,
 	commands,
@@ -100,7 +68,6 @@ import {
 } from "~/utils/tauri";
 import { CameraSelectBase } from "./(window-chrome)/new-main/CameraSelect";
 import InfoPill from "./(window-chrome)/new-main/InfoPill";
-import { MicrophoneSelectBase } from "./(window-chrome)/new-main/MicrophoneSelect";
 import {
 	RecordingOptionsProvider,
 	useRecordingOptions,
@@ -173,31 +140,15 @@ export default function () {
 }
 
 function useOptions() {
-	const { rawOptions: _rawOptions, setOptions } = createOptionsQuery();
-
-	const organizations = createOrganizationsQuery();
-	const options = mergeProps(_rawOptions, () => {
-		const ret: Partial<typeof _rawOptions> = {};
-
-		if (
-			(!_rawOptions.organizationId && organizations().length > 0) ||
-			(_rawOptions.organizationId &&
-				organizations().every((o) => o.id !== _rawOptions.organizationId) &&
-				organizations().length > 0)
-		)
-			ret.organizationId = organizations()[0]?.id;
-
-		return ret;
-	});
-
-	return [options, setOptions] as const;
+	const { rawOptions, setOptions } = createOptionsQuery();
+	return [rawOptions, setOptions] as const;
 }
 
 function Inner() {
 	const [params] = useSearchParams<{
 		displayId: DisplayId;
 		isHoveredDisplay: string;
-		targetMode: "display" | "window" | "area" | "camera";
+		targetMode: "display" | "window" | "area";
 		overlayInstance: string;
 	}>();
 	const [options, setOptions] = useOptions();
@@ -334,19 +285,6 @@ function Inner() {
 	);
 
 	createEffect(() => {
-		if (options.targetMode === "camera") {
-			setOptions(
-				"captureTarget",
-				reconcile({ variant: "cameraOnly" } as ScreenCaptureTarget),
-			);
-			setOptions("captureSystemAudio", false);
-			getCameraWindow().then((win) => {
-				if (win) win.close();
-			});
-		}
-	});
-
-	createEffect(() => {
 		if (!options.targetMode) {
 			setTargetUnderCursor(reconcile({ display_id: null, window: null }));
 		}
@@ -357,9 +295,7 @@ function Inner() {
 	// (from possibly-stale query state) whether it may reveal itself again.
 	const dismissPickerForRecordingStart = () => {
 		if (options.mode === "screenshot") return;
-		const targetModeDismissal =
-			options.mode === "instant" ? "recordingInstant" : "recordingStudio";
-		setOptions({ targetMode: null, targetModeDismissal });
+		setOptions({ targetMode: null, targetModeDismissal: "recordingStudio" });
 	};
 
 	// This prevents browser keyboard shortcuts from firing.
@@ -368,32 +304,6 @@ function Inner() {
 
 	return (
 		<Switch>
-			<Match when={options.targetMode === "camera"}>
-				<div class="relative w-screen h-screen flex flex-col items-center justify-center bg-black/70">
-					<div class="absolute inset-0 bg-black/60 -z-10" />
-					<div class="flex flex-col items-center text-white mb-4">
-						<span class="mb-2 text-3xl font-semibold">Camera Only</span>
-						<span class="text-xs text-gray-11">
-							Record using only your camera and microphone
-						</span>
-					</div>
-					<div class="flex justify-center w-full px-6 mb-4">
-						<CameraPreviewInline />
-					</div>
-					<RecordingControls
-						target={{ variant: "cameraOnly" } as ScreenCaptureTarget}
-						showBackground
-						onRecordingStart={dismissPickerForRecordingStart}
-						onClose={() => {
-							setOptions({
-								targetMode: null,
-								targetModeDismissal: "cancelled",
-							});
-							commands.closeTargetSelectOverlays();
-						}}
-					/>
-				</div>
-			</Match>
 			<Match when={options.targetMode === "display" && params.displayId}>
 				{(displayId) => (
 					<div
@@ -446,7 +356,6 @@ function Inner() {
 								commands.closeTargetSelectOverlays();
 							}}
 						/>
-						<ShowCapFreeWarning isInstantMode={options.mode === "instant"} />
 					</div>
 				)}
 			</Match>
@@ -744,9 +653,6 @@ function Inner() {
 										>
 											Adjust recording area
 										</Button>
-										<ShowCapFreeWarning
-											isInstantMode={options.mode === "instant"}
-										/>
 									</div>
 								</div>
 							)}
@@ -1495,11 +1401,6 @@ function Inner() {
 											</small>
 										</div>
 									</Show>
-									<Show when={isValid()}>
-										<ShowCapFreeWarning
-											isInstantMode={options.mode === "instant"}
-										/>
-									</Show>
 								</div>
 							</div>
 
@@ -1523,355 +1424,6 @@ function Inner() {
 	);
 }
 
-const WS_INITIAL_BACKOFF_MS = 1000;
-const WS_MAX_BACKOFF_MS = 30000;
-const WS_MAX_RETRIES = 10;
-const WS_JITTER_FACTOR = 0.3;
-
-function calculateBackoffWithJitter(
-	retryCount: number,
-	initialMs: number,
-	maxMs: number,
-	jitterFactor: number,
-): number {
-	const exponentialBackoff = Math.min(initialMs * 2 ** retryCount, maxMs);
-	const jitterRange = exponentialBackoff * jitterFactor;
-	const jitter = Math.random() * jitterRange * 2 - jitterRange;
-	return Math.max(initialMs, Math.floor(exponentialBackoff + jitter));
-}
-
-const WS_STALL_TIMEOUT_MS = 2000;
-
-function CameraPreviewInline() {
-	const { rawOptions } = useRecordingOptions();
-	const [state, setState] = makePersisted(
-		createStore<CameraWindowState>(getDefaultCameraWindowState()),
-		{ name: CAMERA_WINDOW_STATE_STORAGE_KEY },
-	);
-	const [hasFrame, setHasFrame] = createSignal(false);
-	const [frameDimensions, setFrameDimensions] = createSignal<{
-		width: number;
-		height: number;
-	} | null>(null);
-	const [connectionFailed, setConnectionFailed] = createSignal(false);
-	const [chromeVisible, setChromeVisible] = createSignal(false);
-	const [viewportSize, setViewportSize] = createSignal({
-		width: window.innerWidth,
-		height: window.innerHeight,
-	});
-	let canvasRef: HTMLCanvasElement | undefined;
-	let ws: Omit<WebSocket, "onmessage"> | undefined;
-	let canvasControls: CanvasControls | undefined;
-	let retryCount = 0;
-	let reconnectTimeoutId: ReturnType<typeof setTimeout> | undefined;
-	let stallCheckInterval: ReturnType<typeof setInterval> | undefined;
-	let isCleanedUp = false;
-	let lastFrameTime = 0;
-
-	const cameraWsPort = window.__CAP__?.cameraWsPort;
-	const hasCameraSelected = () => rawOptions.cameraID !== null;
-
-	const closeSocket = () => {
-		const socket = ws;
-		const controls = canvasControls;
-		ws = undefined;
-		canvasControls = undefined;
-		controls?.dispose();
-		if (
-			socket &&
-			socket.readyState !== WebSocket.CLOSING &&
-			socket.readyState !== WebSocket.CLOSED
-		) {
-			socket.close();
-		}
-	};
-
-	const initCanvasControls = () => {
-		if (!canvasControls || !canvasRef) return;
-		canvasControls.initDirectCanvas(canvasRef);
-	};
-
-	const updateFrameState = (frame: FrameData) => {
-		resetBackoff();
-		lastFrameTime = Date.now();
-
-		const dimensions = frameDimensions();
-		if (
-			!dimensions ||
-			dimensions.width !== frame.width ||
-			dimensions.height !== frame.height
-		) {
-			setFrameDimensions({ width: frame.width, height: frame.height });
-		}
-		if (canvasControls?.hasRenderedFrame()) {
-			setHasFrame(true);
-		}
-	};
-
-	createEventListener(window, "resize", () => {
-		setViewportSize({
-			width: window.innerWidth,
-			height: window.innerHeight,
-		});
-	});
-
-	createEffect(() => {
-		let currentSize = state.size as number | string;
-		if (typeof currentSize !== "number" || Number.isNaN(currentSize)) {
-			currentSize =
-				currentSize === "lg" ? CAMERA_PRESET_LARGE : CAMERA_DEFAULT_SIZE;
-			setState("size", currentSize);
-			return;
-		}
-
-		const clampedSize = clampCameraSize(currentSize);
-		if (clampedSize !== currentSize) {
-			setState("size", clampedSize);
-			return;
-		}
-
-		commands.setCameraPreviewState({
-			size: state.size,
-			shape: state.shape,
-			mirrored: state.mirrored,
-			background_blur: normalizeBackgroundBlurMode(state.backgroundBlur),
-		});
-	});
-
-	const scheduleReconnect = () => {
-		if (isCleanedUp || reconnectTimeoutId !== undefined || ws) return;
-
-		if (retryCount >= WS_MAX_RETRIES) {
-			setConnectionFailed(true);
-			return;
-		}
-
-		const backoffMs = calculateBackoffWithJitter(
-			retryCount,
-			WS_INITIAL_BACKOFF_MS,
-			WS_MAX_BACKOFF_MS,
-			WS_JITTER_FACTOR,
-		);
-
-		reconnectTimeoutId = setTimeout(() => {
-			reconnectTimeoutId = undefined;
-			if (isCleanedUp || ws || !hasCameraSelected()) return;
-			retryCount += 1;
-			ws = createSocket();
-		}, backoffMs);
-	};
-
-	const resetBackoff = () => {
-		retryCount = 0;
-		setConnectionFailed(false);
-		if (reconnectTimeoutId !== undefined) {
-			clearTimeout(reconnectTimeoutId);
-			reconnectTimeoutId = undefined;
-		}
-	};
-
-	const createSocket = () => {
-		if (!cameraWsPort) return undefined;
-
-		const [socket, _isConnected, _isWorkerReady, controls] = createImageDataWS(
-			`ws://localhost:${cameraWsPort}`,
-			updateFrameState,
-			() => commands.refreshCameraFeed().catch(() => {}),
-			{ powerPreference: "low-power" },
-		);
-		canvasControls = controls;
-		initCanvasControls();
-
-		socket.addEventListener("open", () => {
-			setConnectionFailed(false);
-			lastFrameTime = Date.now();
-			setHasFrame(false);
-			setFrameDimensions(null);
-		});
-
-		socket.addEventListener("close", () => {
-			if (canvasControls === controls) {
-				canvasControls = undefined;
-			}
-			if (ws === socket) ws = undefined;
-			if (!isCleanedUp && hasCameraSelected()) scheduleReconnect();
-		});
-
-		socket.addEventListener("error", () => {
-			controls.dispose();
-		});
-
-		return socket;
-	};
-
-	createEffect(() => {
-		if (reconnectTimeoutId !== undefined) {
-			clearTimeout(reconnectTimeoutId);
-			reconnectTimeoutId = undefined;
-		}
-		if (stallCheckInterval !== undefined) {
-			clearInterval(stallCheckInterval);
-			stallCheckInterval = undefined;
-		}
-
-		if (hasCameraSelected()) {
-			if (
-				!ws ||
-				ws.readyState === WebSocket.CLOSED ||
-				ws.readyState === WebSocket.CLOSING
-			) {
-				resetBackoff();
-				lastFrameTime = Date.now();
-				ws = createSocket();
-			}
-
-			stallCheckInterval = setInterval(() => {
-				if (
-					!isCleanedUp &&
-					ws?.readyState === WebSocket.OPEN &&
-					lastFrameTime > 0 &&
-					Date.now() - lastFrameTime > WS_STALL_TIMEOUT_MS
-				) {
-					lastFrameTime = Date.now();
-					commands.refreshCameraFeed().catch(() => {});
-					ws?.close();
-				}
-			}, WS_STALL_TIMEOUT_MS);
-		} else {
-			setHasFrame(false);
-			setFrameDimensions(null);
-			closeSocket();
-			setConnectionFailed(false);
-		}
-	});
-
-	onCleanup(() => {
-		isCleanedUp = true;
-		if (reconnectTimeoutId !== undefined) {
-			clearTimeout(reconnectTimeoutId);
-			reconnectTimeoutId = undefined;
-		}
-		if (stallCheckInterval !== undefined) {
-			clearInterval(stallCheckInterval);
-			stallCheckInterval = undefined;
-		}
-		closeSocket();
-	});
-
-	const previewDimensions = () => {
-		const dimensions = frameDimensions();
-		const { width, height } = cameraPreviewDimensions(
-			state.size,
-			state.shape,
-			dimensions ? dimensions.width / dimensions.height : undefined,
-		);
-		const viewport = viewportSize();
-		const maxWidth = Math.max(160, viewport.width - 48);
-		const maxHeight = Math.max(160, viewport.height - 320);
-		const scale = Math.min(1, maxWidth / width, maxHeight / height);
-
-		return {
-			height: Math.round(height * scale),
-			width: Math.round(width * scale),
-		};
-	};
-
-	const previewFrameStyle = () => {
-		const dimensions = previewDimensions();
-		return {
-			"border-radius": cameraBorderRadius(state),
-			height: `${dimensions.height}px`,
-			width: `${dimensions.width}px`,
-		};
-	};
-
-	const canvasStyle = () => {
-		return {
-			height: "100%",
-			"object-fit": "cover" as const,
-			opacity: hasFrame() ? "1" : "0",
-			transform: state.mirrored ? "scaleX(-1)" : "scaleX(1)",
-			width: "100%",
-		};
-	};
-
-	const handleRetryConnection = () => {
-		resetBackoff();
-		closeSocket();
-		ws = createSocket();
-	};
-
-	return (
-		<div
-			class="flex flex-col items-center max-w-full"
-			onPointerMove={() => setChromeVisible(true)}
-			onPointerLeave={() => setChromeVisible(false)}
-			onPointerCancel={() => setChromeVisible(false)}
-		>
-			<div class="h-14 flex items-center justify-center">
-				<CameraPreviewToolbar
-					state={state}
-					setState={setState}
-					visible={chromeVisible()}
-					scale={cameraToolbarScale(state.size)}
-				/>
-			</div>
-			<div class="relative shadow-lg" style={previewFrameStyle()}>
-				<div
-					class="flex items-center justify-center w-full h-full overflow-hidden border border-gray-6 bg-black text-gray-11 relative"
-					style={{ "border-radius": "inherit" }}
-				>
-					<Show
-						when={hasCameraSelected()}
-						fallback={
-							<div class="flex flex-col items-center gap-2 text-center px-4">
-								<IconCapCamera class="size-8 text-gray-9 mb-2" />
-								<div class="text-sm text-gray-11">Please select a camera</div>
-							</div>
-						}
-					>
-						<Show
-							when={!connectionFailed()}
-							fallback={
-								<div class="flex flex-col items-center gap-2 text-center px-4">
-									<div class="text-sm text-red-400">
-										Camera connection failed
-									</div>
-									<button
-										type="button"
-										onClick={handleRetryConnection}
-										class="text-xs text-blue-400 hover:text-blue-300 underline"
-									>
-										Try again
-									</button>
-								</div>
-							}
-						>
-							<canvas
-								ref={(canvas) => {
-									canvasRef = canvas;
-									initCanvasControls();
-								}}
-								class="absolute inset-0"
-								style={canvasStyle()}
-							/>
-							<Show when={!hasFrame()}>
-								<div class="text-sm text-gray-11">Loading camera...</div>
-							</Show>
-						</Show>
-					</Show>
-				</div>
-				<CameraResizeHandles
-					state={state}
-					setState={setState}
-					toolbarHeight={0}
-					visible={chromeVisible()}
-				/>
-			</div>
-		</div>
-	);
-}
-
 function RecordingControls(props: {
 	target: ScreenCaptureTarget;
 	setToggleModeSelect?: (value: boolean) => void;
@@ -1880,64 +1432,28 @@ function RecordingControls(props: {
 	onRecordingStart?: () => void;
 	onClose?: () => void;
 }) {
-	const auth = authStore.createQuery();
 	const { setOptions, rawOptions } = useRecordingOptions();
 
 	const generalSetings = generalSettingsStore.createQuery();
-	const recordingStartSafety = recordingStartSafetyStore.createQuery();
 	const devices = createDevicesQuery();
-	const [noMicrophoneWarningOpen, setNoMicrophoneWarningOpen] =
-		createSignal(false);
-	const [dontShowMicrophoneWarning, setDontShowMicrophoneWarning] =
-		createSignal(false);
-	const [confirmingWithoutMicrophone, setConfirmingWithoutMicrophone] =
-		createSignal(false);
 	const [dismissingPicker, setDismissingPicker] = createSignal(false);
-	let microphoneConfirmationRevision = 0;
 	let controlsDisposed = false;
 	onCleanup(() => {
 		controlsDisposed = true;
-		microphoneConfirmationRevision += 1;
 	});
-	const dismissMicrophoneWarning = () => {
-		microphoneConfirmationRevision += 1;
-		setConfirmingWithoutMicrophone(false);
-		setNoMicrophoneWarningOpen(false);
-	};
 	const cameras = createMemo(() => devices.data?.cameras ?? []);
-	const mics = createMemo(() => devices.data?.microphones ?? []);
 	const permissions = createMemo(() => devices.data?.permissions);
-	const setMicInput = createMicrophoneMutation();
 	const setCamera = createCameraMutation();
 	const [restoringInputs, setRestoringInputs] = createSignal(true);
 
 	onMount(async () => {
-		const restoreMicrophone = rawOptions.micName
-			? commands
-					.setMicInput(rawOptions.micName)
-					.catch((error) =>
-						console.error("Failed to restore mic input:", error),
-					)
-			: Promise.resolve();
-
-		const isCameraOnly = props.target.variant === "cameraOnly";
-		const restoreCamera = async () => {
-			if (rawOptions.cameraID) {
-				await setCamera.rawMutate({ ...rawOptions.cameraID }, isCameraOnly);
+		if (rawOptions.cameraID) {
+			try {
+				await setCamera.rawMutate({ ...rawOptions.cameraID }, false);
+			} catch (error) {
+				console.error("Failed to restore camera input:", error);
 			}
-
-			if (isCameraOnly) {
-				const win = await getCameraWindow();
-				if (win) await win.close();
-			}
-		};
-
-		await Promise.all([
-			restoreMicrophone,
-			restoreCamera().catch((error) =>
-				console.error("Failed to restore camera input:", error),
-			),
-		]);
+		}
 		if (!controlsDisposed) setRestoringInputs(false);
 	});
 
@@ -1946,76 +1462,15 @@ function RecordingControls(props: {
 		return findCamera(cameras(), rawOptions.cameraID) ?? null;
 	});
 
-	const selectedMicName = createMemo(() => {
-		if (!rawOptions.micName) return null;
-		return mics().find((name) => name === rawOptions.micName) ?? null;
-	});
-	const microphoneConfirmationContext = createMemo(() =>
-		JSON.stringify({
-			target: props.target,
-			mode: rawOptions.mode,
-			microphone: rawOptions.micName,
-			selectedMicrophone: selectedMicName(),
-			camera: rawOptions.cameraID,
-			cameraAvailable: selectedCamera() !== null,
-			systemAudio: rawOptions.captureSystemAudio,
-			targetModeSource: rawOptions.targetModeSource,
-			organizationId: rawOptions.organizationId,
-		}),
-	);
-	let previousConfirmationContext = microphoneConfirmationContext();
-	createEffect(() => {
-		const context = microphoneConfirmationContext();
-		if (context !== previousConfirmationContext) {
-			previousConfirmationContext = context;
-			dismissMicrophoneWarning();
-		}
-	});
-
-	createEffect(() => {
-		if (
-			!shouldConfirmRecordingWithoutMicrophone(
-				rawOptions.mode,
-				recordingStartSafety.data?.confirmBeforeRecordingWithoutMicrophone ??
-					true,
-				selectedMicName(),
-			)
-		) {
-			setNoMicrophoneWarningOpen(false);
-		}
-	});
-
 	const startLoading = () =>
 		dismissingPicker() ||
 		devices.isPending ||
-		recordingStartSafety.isPending ||
 		restoringInputs() ||
-		setMicInput.isPending ||
 		setCamera.isPending;
 	const startDisabled = () => !!props.disabled || startLoading();
 
-	const startRecording = async (confirmedWithoutMicrophone = false) => {
-		if (confirmingWithoutMicrophone() && !confirmedWithoutMicrophone) return;
-		if (rawOptions.mode === "instant" && !auth.data) {
-			emit("start-sign-in");
-			return;
-		}
+	const startRecording = async () => {
 		if (startDisabled()) return;
-
-		if (
-			!confirmedWithoutMicrophone &&
-			shouldConfirmRecordingWithoutMicrophone(
-				rawOptions.mode,
-				recordingStartSafety.data?.confirmBeforeRecordingWithoutMicrophone ??
-					true,
-				selectedMicName(),
-			)
-		) {
-			setNoMicrophoneWarningOpen(true);
-			return;
-		}
-
-		setNoMicrophoneWarningOpen(false);
 
 		// Snapshot before onRecordingStart: dismissing the picker
 		// (targetMode: null) disposes the <Match> branch that owns
@@ -2082,7 +1537,7 @@ function RecordingControls(props: {
 			.startRecording({
 				capture_target: target,
 				mode: rawOptions.mode,
-				capture_system_audio: rawOptions.captureSystemAudio,
+				capture_system_audio: false,
 			})
 			.then((action) => {
 				// On success the backend closes the overlay windows; the
@@ -2096,14 +1551,7 @@ function RecordingControls(props: {
 				// This webview is hidden by now, so the toast is a
 				// best-effort extra — the visible feedback comes from the
 				// backend's StartFailed event toasted in the main window.
-				if (
-					msg.includes("no longer available") ||
-					msg.includes("DeviceNotFound")
-				) {
-					toast.error(
-						"Selected microphone is not available. Please select a different microphone in settings.",
-					);
-				} else if (!isRecordingStartCancelled(e)) {
+				if (!isRecordingStartCancelled(e)) {
 					toast.error(`Failed to start recording: ${msg}`);
 				}
 				// An IPC-level rejection never reaches the backend, so no
@@ -2117,45 +1565,6 @@ function RecordingControls(props: {
 			});
 	};
 
-	const confirmWithoutMicrophone = async () => {
-		if (startDisabled() || confirmingWithoutMicrophone()) return;
-		const revision = ++microphoneConfirmationRevision;
-		const context = microphoneConfirmationContext();
-		setConfirmingWithoutMicrophone(true);
-		if (dontShowMicrophoneWarning()) {
-			try {
-				await recordingStartSafetyStore.set({
-					confirmBeforeRecordingWithoutMicrophone: false,
-				});
-			} catch {
-				if (controlsDisposed || revision !== microphoneConfirmationRevision)
-					return;
-				setConfirmingWithoutMicrophone(false);
-				toast.error(
-					"Could not save your preference. Try again or leave the box unchecked.",
-				);
-				return;
-			}
-		}
-		if (
-			controlsDisposed ||
-			revision !== microphoneConfirmationRevision ||
-			context !== microphoneConfirmationContext()
-		) {
-			if (!controlsDisposed && revision === microphoneConfirmationRevision) {
-				dismissMicrophoneWarning();
-			}
-			return;
-		}
-		try {
-			await startRecording(true);
-		} finally {
-			if (!controlsDisposed && revision === microphoneConfirmationRevision) {
-				setConfirmingWithoutMicrophone(false);
-			}
-		}
-	};
-
 	const menuModes = async () =>
 		await Menu.new({
 			items: [
@@ -2166,14 +1575,6 @@ function RecordingControls(props: {
 						commands.setRecordingMode("studio");
 					},
 					checked: rawOptions.mode === "studio",
-				}),
-				await CheckMenuItem.new({
-					text: "Instant Mode",
-					action: () => {
-						setOptions("mode", "instant");
-						commands.setRecordingMode("instant");
-					},
-					checked: rawOptions.mode === "instant",
 				}),
 				await CheckMenuItem.new({
 					text: "Screenshot Mode",
@@ -2251,116 +1652,54 @@ function RecordingControls(props: {
 									commands.closeTargetSelectOverlays();
 								}
 							}}
-							class="flex justify-center items-center rounded-full transition-opacity bg-gray-12 size-9 hover:opacity-80"
+							class="flex justify-center items-center rounded-sm transition-opacity bg-gray-12 size-9 hover:opacity-80"
 						>
 							<IconCapX class="invert will-change-transform size-3 dark:invert-0" />
 						</div>
-						<Popover
-							open={noMicrophoneWarningOpen()}
-							onOpenChange={(open) => {
-								if (open) setNoMicrophoneWarningOpen(true);
-								else dismissMicrophoneWarning();
-							}}
-							placement="bottom"
-							gutter={8}
+						<div
+							data-disabled={startDisabled()}
+							class="flex flex-1 min-w-0 max-w-[18rem] overflow-hidden flex-row h-11 rounded-sm text-white bg-linear-to-r from-blue-10 via-blue-10 to-blue-11 dark:from-blue-9 dark:via-blue-9 dark:to-blue-10 group"
+							onClick={() => void startRecording()}
 						>
-							<Popover.Anchor
-								data-inactive={rawOptions.mode === "instant" && !auth.data}
-								data-disabled={startDisabled()}
-								class="flex flex-1 min-w-0 max-w-[18rem] overflow-hidden flex-row h-11 rounded-full text-white bg-linear-to-r from-blue-10 via-blue-10 to-blue-11 dark:from-blue-9 dark:via-blue-9 dark:to-blue-10 group"
-								onClick={() => void startRecording()}
+							<div
+								class="flex flex-1 items-center py-1 pl-4 transition-colors hover:bg-white/10 min-w-0"
+								classList={{
+									"opacity-60 cursor-not-allowed hover:bg-transparent":
+										startDisabled(),
+								}}
 							>
-								<div
-									class="flex flex-1 items-center py-1 pl-4 transition-colors hover:bg-white/10 min-w-0"
-									classList={{
-										"opacity-60 cursor-not-allowed hover:bg-transparent":
-											startDisabled(),
-									}}
-								>
-									<Switch>
-										<Match when={rawOptions.mode === "studio"}>
-											<IconCapFilmCut class="size-4 shrink-0" />
-										</Match>
-										<Match when={rawOptions.mode === "instant"}>
-											<IconCapInstant class="size-4 shrink-0" />
-										</Match>
-										<Match when={(rawOptions.mode as string) === "screenshot"}>
-											<IconCapCamera class="size-4 shrink-0" />
-										</Match>
-									</Switch>
-									<div class="flex flex-col mr-2 ml-3 min-w-0">
-										<span class="text-[0.95rem] font-medium text-white text-nowrap">
-											{(() => {
-												if (rawOptions.mode === "instant" && !auth.data)
-													return "Sign In To Use";
-												if (rawOptions.mode === "screenshot")
-													return "Take Screenshot";
-												return "Start Recording";
-											})()}
-										</span>
-										<span class="text-[11px] flex items-center text-nowrap gap-1 transition-opacity duration-200 text-white/90 font-light -mt-0.5">
-											{`${capitalize(rawOptions.mode)} Mode`}
-										</span>
-									</div>
+								<Switch>
+									<Match when={rawOptions.mode === "studio"}>
+										<IconCapFilmCut class="size-4 shrink-0" />
+									</Match>
+									<Match when={(rawOptions.mode as string) === "screenshot"}>
+										<IconCapCamera class="size-4 shrink-0" />
+									</Match>
+								</Switch>
+								<div class="flex flex-col mr-2 ml-3 min-w-0">
+									<span class="text-[0.95rem] font-medium text-white text-nowrap">
+										{rawOptions.mode === "screenshot"
+											? "Take Screenshot"
+											: "Start Recording"}
+									</span>
+									<span class="text-[11px] flex items-center text-nowrap gap-1 transition-opacity duration-200 text-white/90 font-light -mt-0.5">
+										{`${capitalize(rawOptions.mode)} Mode`}
+									</span>
 								</div>
-								<button
-									type="button"
-									aria-label="Choose recording mode"
-									class="pl-2.5 pr-3 py-1.5 flex items-center border-l border-white/20 bg-white/5 transition-colors group-hover:bg-white/10"
-									onClick={(e) => showMenu(menuModes, e)}
-								>
-									<IconCapCaretDown class="pointer-events-none" />
-								</button>
-							</Popover.Anchor>
-							<Popover.Portal>
-								<Popover.Content class="z-200 w-[min(21rem,calc(100vw-1.5rem))] rounded-xl border border-amber-6 bg-gray-1 p-3.5 text-gray-12 shadow-xl outline-hidden data-expanded:animate-in data-expanded:fade-in data-expanded:zoom-in-95">
-									<div class="flex gap-2.5 items-start">
-										<IconLucideAlertTriangle class="mt-0.5 size-4 shrink-0 text-amber-10" />
-										<div class="flex flex-col gap-1">
-											<p class="text-sm font-semibold">
-												No microphone detected
-											</p>
-											<p class="text-xs leading-relaxed text-gray-10">
-												This recording will not include your voice. Select a
-												microphone, or continue without one.
-											</p>
-										</div>
-									</div>
-									<label class="mt-3 flex cursor-pointer items-center gap-2 text-xs text-gray-11">
-										<input
-											type="checkbox"
-											class="size-3.5 accent-blue-9"
-											checked={dontShowMicrophoneWarning()}
-											onChange={(event) =>
-												setDontShowMicrophoneWarning(
-													event.currentTarget.checked,
-												)
-											}
-										/>
-										Don't show again
-									</label>
-									<div class="flex gap-2 justify-end mt-3">
-										<Popover.CloseButton class="px-3 h-8 text-xs font-medium rounded-lg border border-gray-4 bg-gray-2 text-gray-12 hover:bg-gray-3">
-											Go back
-										</Popover.CloseButton>
-										<button
-											type="button"
-											class="px-3 h-8 text-xs font-medium text-white rounded-lg bg-blue-9 hover:bg-blue-10"
-											onClick={() => void confirmWithoutMicrophone()}
-											disabled={
-												startDisabled() || confirmingWithoutMicrophone()
-											}
-										>
-											Record without microphone
-										</button>
-									</div>
-								</Popover.Content>
-							</Popover.Portal>
-						</Popover>
+							</div>
+							<button
+								type="button"
+								aria-label="Choose recording mode"
+								class="pl-2.5 pr-3 py-1.5 flex items-center border-l border-white/20 bg-white/5 transition-colors group-hover:bg-white/10"
+								onClick={(e) => showMenu(menuModes, e)}
+							>
+								<IconCapCaretDown class="pointer-events-none" />
+							</button>
+						</div>
 						<button
 							type="button"
 							aria-label="Recording countdown"
-							class="flex justify-center items-center rounded-full border transition-opacity bg-gray-6 text-gray-12 size-9 hover:opacity-80"
+							class="flex justify-center items-center rounded-sm border transition-opacity bg-gray-6 text-gray-12 size-9 hover:opacity-80"
 							onClick={(e) => showMenu(preRecordingMenu, e)}
 						>
 							<IconCapGear class="pointer-events-none will-change-transform size-5" />
@@ -2369,40 +1708,21 @@ function RecordingControls(props: {
 				</div>
 				<Show when={(rawOptions.mode as string) !== "screenshot"}>
 					<div class={`${LIQUID_GLASS_SURFACE_CLASS} p-3`}>
-						<div class="grid grid-cols-2 gap-2 w-full">
+						<div class="grid grid-cols-1 gap-2 w-full">
 							<CameraSelectBase
 								disabled={devices.isPending}
 								options={cameras()}
 								value={selectedCamera() ?? null}
 								onChange={(camera) => {
-									const isCameraOnly = props.target.variant === "cameraOnly";
 									if (!camera) setCamera.mutate({ model: null });
 									else if (camera.model_id)
-										setCamera.mutate({
-											model: { ModelID: camera.model_id },
-											skipCameraWindow: isCameraOnly,
-										});
+										setCamera.mutate({ model: { ModelID: camera.model_id } });
 									else
-										setCamera.mutate({
-											model: { DeviceID: camera.device_id },
-											skipCameraWindow: isCameraOnly,
-										});
+										setCamera.mutate({ model: { DeviceID: camera.device_id } });
 								}}
 								permissions={permissions()}
-								hidePreviewButton={props.target.variant === "cameraOnly"}
 								PillComponent={InfoPill}
 								class="flex flex-row gap-2 items-center px-2 w-full h-[42px] rounded-lg border border-gray-5 transition-colors cursor-default disabled:opacity-70 bg-gray-3 disabled:text-gray-11 KSelect"
-								iconClass="text-gray-10 size-4"
-							/>
-							<MicrophoneSelectBase
-								disabled={devices.isPending}
-								options={mics()}
-								value={selectedMicName()}
-								onChange={(value) => setMicInput.mutate(value)}
-								permissions={permissions()}
-								PillComponent={InfoPill}
-								class="flex overflow-hidden relative z-10 flex-row gap-2 items-center px-2 w-full h-[42px] rounded-lg border border-gray-5 transition-colors cursor-default disabled:opacity-70 bg-gray-3 disabled:text-gray-11 KSelect"
-								levelIndicatorClass="bg-blue-7"
 								iconClass="text-gray-10 size-4"
 							/>
 						</div>
@@ -2427,25 +1747,5 @@ function RecordingControls(props: {
 				</div>
 			</div>
 		</>
-	);
-}
-
-function ShowCapFreeWarning(props: { isInstantMode: boolean }) {
-	const auth = authStore.createQuery();
-
-	return (
-		<Suspense>
-			<Show when={props.isInstantMode && auth.data?.plan?.upgraded === false}>
-				<p class="text-sm text-center max-w-64 text-gray-3 mt-3">
-					Instant Mode recordings are limited to 5 mins,{" "}
-					<button
-						class="underline font-bold text-gray-3"
-						onClick={() => commands.showWindow("Upgrade")}
-					>
-						Upgrade to Pro
-					</button>
-				</p>
-			</Show>
-		</Suspense>
 	);
 }

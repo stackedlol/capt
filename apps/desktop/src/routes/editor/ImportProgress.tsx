@@ -10,14 +10,14 @@ import {
 import IconLucideAlertCircle from "~icons/lucide/alert-circle";
 
 const funMessages = [
-	"Adjusting the Cap just right...",
-	"Putting on our thinking Cap...",
-	"Cap-sizing the pixels...",
-	"Wearing our processing Cap...",
-	"Cap-tivating import in progress...",
-	"Flipping our Cap backwards...",
-	"Cap-puccino break? Almost done...",
-	"Cap-able of great things...",
+	"Lining up the frames...",
+	"Reading the timeline...",
+	"Sizing the pixels...",
+	"Almost there...",
+	"Decoding the video...",
+	"Checking the audio...",
+	"Building thumbnails...",
+	"Finishing up...",
 ];
 
 export type ImportProgressProps = {
@@ -76,7 +76,7 @@ export function ImportProgress(props: ImportProgressProps) {
 						{(errorMessage) => (
 							<div class="w-80 text-center">
 								<div class="flex items-center justify-center mb-6">
-									<div class="w-16 h-16 rounded-full bg-red-3 flex items-center justify-center">
+									<div class="w-16 h-16 rounded-sm bg-red-3 flex items-center justify-center">
 										<IconLucideAlertCircle class="w-8 h-8 text-red-9" />
 									</div>
 								</div>

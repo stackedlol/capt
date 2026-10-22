@@ -1,5 +1,4 @@
 import { Button } from "@cap/ui-solid";
-import { createWritableMemo } from "@solid-primitives/memo";
 import {
 	isPermissionGranted,
 	requestPermission,
@@ -25,18 +24,10 @@ import themePreviewAuto from "~/assets/theme-previews/auto.jpg";
 import themePreviewDark from "~/assets/theme-previews/dark.jpg";
 import themePreviewLight from "~/assets/theme-previews/light.jpg";
 import { Input, Slider } from "~/routes/editor/ui";
-import {
-	audioEnhancementStore,
-	authStore,
-	generalSettingsStore,
-	recordingStartSafetyStore,
-} from "~/store";
-import { clientEnv } from "~/utils/env";
+import { generalSettingsStore } from "~/store";
 import {
 	deriveGeneralSettings,
 	type GeneralSettingsStore,
-	RECORDING_START_SAFETY_DEFAULTS,
-	type RecordingStartSafetySettings,
 } from "~/utils/general-settings";
 import {
 	type AppTheme,
@@ -46,7 +37,6 @@ import {
 	type MainWindowRecordingStartBehaviour,
 	type PostDeletionBehaviour,
 	type PostStudioRecordingBehaviour,
-	type UpdateChannel,
 	type WindowExclusion,
 } from "~/utils/tauri";
 import IconLucideAlertTriangle from "~icons/lucide/alert-triangle";
@@ -129,25 +119,11 @@ const DEFAULT_PROJECT_NAME_TEMPLATE =
 	"{target_name} ({target_kind}) {date} {time}";
 
 export default function GeneralSettings() {
-	const [stores] = createResource(() =>
-		Promise.all([
-			generalSettingsStore.get(),
-			recordingStartSafetyStore.get(),
-			audioEnhancementStore.get(),
-		]),
-	);
+	const [store] = createResource(() => generalSettingsStore.get());
 
 	return (
-		<Show when={stores()} keyed>
-			{(stores) => (
-				<Inner
-					initialStore={stores[0] ?? null}
-					initialRecordingStartSafety={
-						stores[1] ?? RECORDING_START_SAFETY_DEFAULTS
-					}
-					initialStudioSoundByDefault={stores[2]?.enabledByDefault ?? true}
-				/>
-			)}
+		<Show when={store.state === "ready"}>
+			<Inner initialStore={store() ?? null} />
 		</Show>
 	);
 }
@@ -171,7 +147,7 @@ function AppearanceSection(props: {
 	return (
 		<Section
 			title="Appearance"
-			description="Match Cap to your system theme or pick a fixed look."
+			description="Match capt to your system theme or pick a fixed look."
 		>
 			<SectionCard padded>
 				<div
@@ -226,25 +202,10 @@ function AppearanceSection(props: {
 	);
 }
 
-function Inner(props: {
-	initialStore: GeneralSettingsStore | null;
-	initialRecordingStartSafety: RecordingStartSafetySettings;
-	initialStudioSoundByDefault: boolean;
-}) {
+function Inner(props: { initialStore: GeneralSettingsStore | null }) {
 	const [settings, setSettings] = createStore<ExtendedGeneralSettingsStore>(
 		deriveGeneralSettings(props.initialStore),
 	);
-	const [
-		confirmBeforeRecordingWithoutMicrophone,
-		setConfirmBeforeRecordingWithoutMicrophone,
-	] = createSignal(
-		props.initialRecordingStartSafety.confirmBeforeRecordingWithoutMicrophone,
-	);
-
-	const [studioSoundByDefault, setStudioSoundByDefault] = createSignal(
-		props.initialStudioSoundByDefault,
-	);
-
 	createEffect(() => {
 		setSettings(reconcile(deriveGeneralSettings(props.initialStore)));
 	});
@@ -280,30 +241,6 @@ function Inner(props: {
 		} catch (error) {
 			setSettings(key as keyof GeneralSettingsStore, previousValue);
 			console.error(`Failed to update ${key}`, error);
-		}
-	};
-
-	const handleRecordingStartSafetyChange = async (value: boolean) => {
-		const previousValue = confirmBeforeRecordingWithoutMicrophone();
-		setConfirmBeforeRecordingWithoutMicrophone(value);
-		try {
-			await recordingStartSafetyStore.set({
-				confirmBeforeRecordingWithoutMicrophone: value,
-			});
-		} catch (error) {
-			setConfirmBeforeRecordingWithoutMicrophone(previousValue);
-			console.error("Failed to update recording start safety", error);
-		}
-	};
-
-	const handleStudioSoundByDefaultChange = async (value: boolean) => {
-		const previousValue = studioSoundByDefault();
-		setStudioSoundByDefault(value);
-		try {
-			await audioEnhancementStore.set({ enabledByDefault: value });
-		} catch (error) {
-			setStudioSoundByDefault(previousValue);
-			console.error("Failed to update Studio Sound default", error);
 		}
 	};
 
@@ -479,18 +416,18 @@ function Inner(props: {
 				{ostype === "macos" && (
 					<Section
 						title="App"
-						description="Choose how Cap shows up on your system."
+						description="Choose how capt shows up on your system."
 					>
 						<SectionRows>
 							<ToggleSettingItem
 								label="Always show dock icon"
-								description="Keep Cap in the dock even when no windows are open."
+								description="Keep capt in the dock even when no windows are open."
 								value={!settings.hideDockIcon}
 								onChange={(v) => handleChange("hideDockIcon", !v)}
 							/>
 							<ToggleSettingItem
 								label="System notifications"
-								description="Show notifications for clipboard copies, saved files, and more. You may need to allow Cap in your system's notification settings."
+								description="Show notifications for clipboard copies, saved files, and more. You may need to allow capt in your system's notification settings."
 								value={!!settings.enableNotifications}
 								onChange={async (value) => {
 									if (value) {
@@ -523,18 +460,6 @@ function Inner(props: {
 								{ text: "5 seconds", value: 5 },
 								{ text: "10 seconds", value: 10 },
 							]}
-						/>
-						<ToggleSettingItem
-							label="Confirm before recording without a microphone"
-							description="Require confirmation when no microphone is selected or the selected microphone is unavailable."
-							value={confirmBeforeRecordingWithoutMicrophone()}
-							onChange={handleRecordingStartSafetyChange}
-						/>
-						<ToggleSettingItem
-							label="Studio Sound on new recordings"
-							description="Clean up microphone audio automatically. You can still turn it off for any recording in the editor."
-							value={studioSoundByDefault()}
-							onChange={handleStudioSoundByDefaultChange}
 						/>
 						<SelectSettingItem
 							label="Main window when recording starts"
@@ -572,14 +497,6 @@ function Inner(props: {
 									value: "reopenRecordingWindow",
 								},
 							]}
-						/>
-						<ToggleSettingItem
-							label="Delete Instant recordings after upload"
-							description="Cap removes the local file once it has uploaded successfully."
-							value={settings.deleteInstantRecordingsAfterUpload ?? false}
-							onChange={(v) =>
-								handleChange("deleteInstantRecordingsAfterUpload", v)
-							}
 						/>
 						<ToggleSettingItem
 							label="Crash-recoverable recording"
@@ -699,38 +616,6 @@ function Inner(props: {
 					isWindows={ostype === "windows"}
 				/>
 
-				<UpdatesSection
-					value={settings.updateChannel ?? "stable"}
-					onChange={async (channel) => {
-						await handleChange("updateChannel", channel);
-						try {
-							await commands.updatesChannelChanged();
-						} catch (error) {
-							console.error("Failed to notify update channel change", error);
-						}
-					}}
-				/>
-
-				<ServerURLSetting
-					value={settings.serverUrl ?? clientEnv.VITE_SERVER_URL}
-					defaultValue={clientEnv.VITE_SERVER_URL}
-					onChange={async (v) => {
-						const url = new URL(v);
-						const origin = url.origin;
-
-						if (
-							!(await confirm(
-								`Are you sure you want to change the server URL to '${origin}'? You will need to sign in again.`,
-							))
-						)
-							return;
-
-						await authStore.set(undefined);
-						await commands.setServerUrl(origin);
-						handleChange("serverUrl", origin);
-					}}
-				/>
-
 				<TelemetryCard
 					value={settings.enableTelemetry !== false}
 					onChange={(v) => handleChange("enableTelemetry", v)}
@@ -803,7 +688,7 @@ function StorageSection(props: {
 	const isCustom = () => props.recordingsPath !== null;
 
 	return (
-		<Section title="Storage" description="Where Cap saves your recordings.">
+		<Section title="Storage" description="Where capt saves your recordings.">
 			<SectionCard padded>
 				<div class="flex flex-col gap-3">
 					<div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-3 border border-gray-4 min-w-0">
@@ -836,162 +721,11 @@ function TelemetryCard(props: {
 			<SectionRows>
 				<ToggleSettingItem
 					label="Share anonymous telemetry"
-					description="Cap uses anonymous telemetry to improve reliability and fix bugs. We never collect recording contents, window titles, file paths, or personal information."
+					description="capt uses anonymous telemetry to improve reliability and fix bugs. We never collect recording contents, window titles, file paths, or personal information."
 					value={props.value}
 					onChange={props.onChange}
 				/>
 			</SectionRows>
-		</Section>
-	);
-}
-
-type UpdateChannelOption = {
-	value: UpdateChannel;
-	label: string;
-	description: string;
-};
-
-const UPDATE_CHANNEL_OPTIONS: UpdateChannelOption[] = [
-	{
-		value: "stable",
-		label: "Stable",
-		description: "Versioned releases (recommended)",
-	},
-	{
-		value: "nightly",
-		label: "Nightly",
-		description:
-			"The newest builds, updated automatically in the background when you're not recording or exporting. May be unstable.",
-	},
-];
-
-function UpdatesSection(props: {
-	value: UpdateChannel;
-	onChange: (value: UpdateChannel) => void;
-}) {
-	const currentOption = createMemo(
-		() =>
-			UPDATE_CHANNEL_OPTIONS.find((option) => option.value === props.value) ??
-			UPDATE_CHANNEL_OPTIONS[0],
-	);
-
-	return (
-		<Section title="Updates" description="Choose which Cap builds you receive.">
-			<SectionCard>
-				<div class="flex flex-col gap-3 px-4 py-4">
-					<div class="flex justify-between items-start gap-4">
-						<div class="flex flex-col gap-0.5 min-w-0">
-							<p class="text-[13px] text-gray-12">Update channel</p>
-							<p class="text-xs leading-snug text-gray-10">
-								Which release channel Cap updates from.
-							</p>
-						</div>
-						<SegmentedControl
-							value={props.value}
-							onChange={props.onChange}
-							options={UPDATE_CHANNEL_OPTIONS.map((option) => ({
-								value: option.value,
-								label: option.label,
-							}))}
-						/>
-					</div>
-					<div class="flex flex-col gap-1.5 px-3 py-2.5 rounded-lg bg-gray-3">
-						<p class="text-xs text-gray-12">{currentOption().description}</p>
-						<Show when={props.value === "nightly"}>
-							<p class="text-[11px] text-gray-10 leading-snug">
-								Switching back to Stable will return you to the latest stable
-								version, which may be older than your current build.
-							</p>
-						</Show>
-					</div>
-				</div>
-			</SectionCard>
-		</Section>
-	);
-}
-
-function SegmentedControl<T extends string | number>(props: {
-	value: T;
-	onChange: (value: T) => void;
-	options: { value: T; label: string }[];
-}) {
-	return (
-		<div class="inline-flex p-0.5 rounded-lg border border-gray-3 bg-gray-3">
-			<For each={props.options}>
-				{(option) => {
-					const isSelected = () => props.value === option.value;
-					return (
-						<button
-							type="button"
-							onClick={() => props.onChange(option.value)}
-							class={cx(
-								"px-3 py-1 text-xs font-medium rounded-md transition-[background-color,color,box-shadow]",
-								isSelected()
-									? "bg-gray-1 text-gray-12 shadow-sm"
-									: "text-gray-10 hover:text-gray-12",
-							)}
-						>
-							{option.label}
-						</button>
-					);
-				}}
-			</For>
-		</div>
-	);
-}
-
-function ServerURLSetting(props: {
-	value: string;
-	defaultValue: string;
-	onChange: (v: string) => void;
-}) {
-	const [value, setValue] = createWritableMemo(() => props.value);
-	const isDefaultValue = () =>
-		props.value === props.defaultValue && value() === props.defaultValue;
-	const resetToDefault = () => {
-		if (props.value === props.defaultValue) {
-			setValue(props.defaultValue);
-			return;
-		}
-
-		props.onChange(props.defaultValue);
-	};
-
-	return (
-		<Section
-			title="Self-host"
-			description="Only change this if you are running your own instance of Cap Web."
-		>
-			<SectionCard padded>
-				<div class="flex flex-col gap-3">
-					<label class="flex flex-col gap-1.5">
-						<span class="text-[13px] text-gray-12">Cap Server URL</span>
-						<Input
-							class="bg-gray-3"
-							value={value()}
-							onInput={(e) => setValue(e.currentTarget.value)}
-						/>
-					</label>
-					<div class="flex justify-end gap-2">
-						<Button
-							size="sm"
-							variant="gray"
-							disabled={isDefaultValue()}
-							onClick={resetToDefault}
-						>
-							Reset to Default
-						</Button>
-						<Button
-							size="sm"
-							variant="dark"
-							disabled={props.value === value()}
-							onClick={() => props.onChange(value())}
-						>
-							Update
-						</Button>
-					</div>
-				</div>
-			</SectionCard>
 		</Section>
 	);
 }
@@ -1027,7 +761,7 @@ function DefaultProjectNameCard(props: {
 			val,
 			macos ? "Safari" : "Chrome",
 			"Window",
-			"instant",
+			"studio",
 			datetime,
 		);
 		setPreview(formatted);
@@ -1039,7 +773,7 @@ function DefaultProjectNameCard(props: {
 				MOMENT_EXAMPLE_TEMPLATE,
 				macos ? "Safari" : "Chrome",
 				"Window",
-				"instant",
+				"studio",
 				datetime,
 			)
 			.then(setMomentExample);
@@ -1143,12 +877,11 @@ function DefaultProjectNameCard(props: {
 							<div class="space-y-1">
 								<p class="font-medium text-gray-12">Recording mode</p>
 								<p>
-									<CodeView>{"{recording_mode}"}</CodeView> → "Studio",
-									"Instant", or "Screenshot"
+									<CodeView>{"{recording_mode}"}</CodeView> → "Studio" or
+									"Screenshot"
 								</p>
 								<p>
-									<CodeView>{"{mode}"}</CodeView> → "studio", "instant", or
-									"screenshot"
+									<CodeView>{"{mode}"}</CodeView> → "studio" or "screenshot"
 								</p>
 							</div>
 
@@ -1275,7 +1008,7 @@ function ExcludedWindowsCard(props: {
 			title="Excluded windows"
 			description={
 				props.isWindows
-					? "Hide windows from recordings. On Windows, only Cap-related windows can be excluded."
+					? "Hide windows from recordings. On Windows, only capt-related windows can be excluded."
 					: "Hide windows from recordings."
 			}
 			right={
@@ -1308,7 +1041,7 @@ function ExcludedWindowsCard(props: {
 							<IconLucideAlertTriangle class="mt-0.5 size-4 shrink-0 text-amber-11" />
 							<div class="min-w-0 flex-1 space-y-1">
 								<p class="text-xs font-medium text-amber-11">
-									Recommended Cap windows are not excluded
+									Recommended capt windows are not excluded
 								</p>
 								<p class="text-[10px] leading-snug text-amber-11">
 									Camera, settings, or recording windows can appear as black
@@ -1339,7 +1072,7 @@ function ExcludedWindowsCard(props: {
 						<div class="flex flex-wrap gap-2">
 							<For each={props.excludedWindows}>
 								{(entry, index) => (
-									<div class="flex gap-2 items-center pr-1 pl-3 py-1.5 rounded-full border bg-gray-3 border-gray-4">
+									<div class="flex gap-2 items-center pr-1 pl-3 py-1.5 rounded-sm border bg-gray-3 border-gray-4">
 										<div class="flex flex-col leading-tight">
 											<span class="text-xs text-gray-12">
 												{getExclusionPrimaryLabel(entry)}
@@ -1352,7 +1085,7 @@ function ExcludedWindowsCard(props: {
 										</div>
 										<button
 											type="button"
-											class="flex justify-center items-center rounded-full transition-colors size-5 text-gray-10 hover:bg-gray-5 hover:text-gray-12"
+											class="flex justify-center items-center rounded-sm transition-colors size-5 text-gray-10 hover:bg-gray-5 hover:text-gray-12"
 											onClick={() => void props.onRemove(index())}
 											aria-label="Remove excluded window"
 										>
@@ -1376,12 +1109,12 @@ function ExcludedWindowsSkeleton() {
 		<div class="flex flex-wrap gap-2" aria-hidden="true">
 			<For each={chipWidths}>
 				{(width) => (
-					<div class="flex gap-2 items-center pr-1 pl-3 py-1.5 rounded-full border bg-gray-3 border-gray-4 animate-pulse">
+					<div class="flex gap-2 items-center pr-1 pl-3 py-1.5 rounded-sm border bg-gray-3 border-gray-4 animate-pulse">
 						<div class="flex flex-col gap-1 leading-tight">
 							<div class={cx("h-2.5 rounded-sm bg-gray-4", width)} />
 							<div class="w-14 h-2 rounded-sm bg-gray-4" />
 						</div>
-						<div class="rounded-full size-5 bg-gray-4" />
+						<div class="rounded-sm size-5 bg-gray-4" />
 					</div>
 				)}
 			</For>

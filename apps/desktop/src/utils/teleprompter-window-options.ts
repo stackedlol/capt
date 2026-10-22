@@ -20,7 +20,7 @@ export function getTeleprompterWindowOptions(
 
 	return {
 		url: "/teleprompter",
-		title: "Cap Teleprompter",
+		title: "capt Teleprompter",
 		width: 560,
 		height: 320,
 		minWidth: 420,

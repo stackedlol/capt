@@ -16,14 +16,7 @@ import {
 	type ParentProps,
 	Show,
 } from "solid-js";
-import toast from "solid-toast";
 import { Input } from "~/routes/editor/ui";
-import {
-	createScreenshotShareLinkFromProjectPath,
-	type ScreenshotExportStatus,
-	screenshotShareStatusText,
-} from "~/routes/screenshot-editor/screenshotExport";
-import { trackEvent } from "~/utils/analytics";
 import { createTauriEventListener } from "~/utils/createEventListener";
 import { importImageFromPicker, showImportError } from "~/utils/importMedia";
 import { commands, events, type RecordingMeta } from "~/utils/tauri";
@@ -33,7 +26,6 @@ import IconLucideCopy from "~icons/lucide/copy";
 import IconLucideEdit from "~icons/lucide/edit";
 import IconLucideFolder from "~icons/lucide/folder";
 import IconLucideImport from "~icons/lucide/import";
-import IconLucideLink from "~icons/lucide/link";
 import IconLucideSearch from "~icons/lucide/search";
 import { Section, SettingsPageContent } from "./Setting";
 
@@ -57,9 +49,6 @@ export default function Screenshots() {
 	const trimmedSearch = createMemo(() => search().trim());
 	const normalizedSearch = createMemo(() => trimmedSearch().toLowerCase());
 	const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
-	const [sharingPath, setSharingPath] = createSignal<string | null>(null);
-	const [shareStatus, setShareStatus] =
-		createSignal<ScreenshotExportStatus>("idle");
 
 	const screenshots = createQuery(() => screenshotsQuery);
 
@@ -97,7 +86,6 @@ export default function Screenshots() {
 	});
 
 	const handleScreenshotClick = (screenshot: Screenshot) => {
-		trackEvent("screenshot_view_clicked");
 		// events.newScreenshotAdded.emit({ path: screenshot.path });
 		commands.showWindow({
 			ScreenshotEditor: {
@@ -107,7 +95,6 @@ export default function Screenshots() {
 	};
 
 	const handleOpenEditor = (path: string) => {
-		trackEvent("screenshot_editor_clicked");
 		commands.showWindow({
 			ScreenshotEditor: {
 				path,
@@ -116,39 +103,11 @@ export default function Screenshots() {
 	};
 
 	const handleOpenFolder = (path: string) => {
-		trackEvent("screenshot_folder_clicked");
 		commands.openFilePath(path);
 	};
 
 	const handleCopyImageToClipboard = (path: string) => {
-		trackEvent("screenshot_copy_clicked");
 		commands.copyScreenshotToClipboard(path);
-	};
-
-	const handleCreateShareableLink = async (path: string) => {
-		if (sharingPath()) return;
-
-		trackEvent("screenshot_share_clicked");
-		setSharingPath(path);
-		setShareStatus("rendering");
-		const toastId = toast.loading(screenshotShareStatusText("rendering"));
-
-		try {
-			await createScreenshotShareLinkFromProjectPath(path, (status) => {
-				setShareStatus(status);
-				if (status !== "idle") {
-					toast.loading(screenshotShareStatusText(status), { id: toastId });
-				}
-			});
-			toast.success("Share link copied to clipboard", { id: toastId });
-		} catch (error) {
-			console.error("Failed to create screenshot share link:", error);
-			const message = error instanceof Error ? error.message : String(error);
-			toast.error(message || "Failed to create share link", { id: toastId });
-		} finally {
-			setSharingPath(null);
-			setShareStatus("idle");
-		}
 	};
 
 	const handleImportImage = async () => {
@@ -229,15 +188,6 @@ export default function Screenshots() {
 											onCopyImageToClipboard={() =>
 												handleCopyImageToClipboard(screenshot.path)
 											}
-											onCreateShareableLink={() =>
-												handleCreateShareableLink(screenshot.path)
-											}
-											isSharing={sharingPath() === screenshot.path}
-											shareTooltipText={
-												sharingPath() === screenshot.path
-													? screenshotShareStatusText(shareStatus())
-													: screenshotShareStatusText("idle")
-											}
 										/>
 									)}
 								</For>
@@ -274,9 +224,6 @@ function ScreenshotItem(props: {
 	onOpenEditor: () => void;
 	onOpenFolder: () => void;
 	onCopyImageToClipboard: () => void;
-	onCreateShareableLink: () => void;
-	isSharing: boolean;
-	shareTooltipText: string;
 }) {
 	const [imageExists, setImageExists] = createSignal(true);
 	const queryClient = useQueryClient();
@@ -325,14 +272,6 @@ function ScreenshotItem(props: {
 				</TooltipIconButton>
 
 				<TooltipIconButton
-					tooltipText={props.shareTooltipText}
-					onClick={props.onCreateShareableLink}
-					disabled={props.isSharing}
-				>
-					<IconLucideLink class="size-4" />
-				</TooltipIconButton>
-
-				<TooltipIconButton
 					tooltipText="Delete"
 					onClick={async () => {
 						if (
@@ -367,7 +306,7 @@ function TooltipIconButton(
 					props.onClick();
 				}}
 				disabled={props.disabled}
-				class="p-2.5 opacity-70 will-change-transform hover:opacity-100 rounded-full transition-all duration-200 hover:bg-gray-3 dark:hover:bg-gray-5 disabled:pointer-events-none disabled:opacity-45 disabled:hover:opacity-45"
+				class="p-2.5 opacity-70 will-change-transform hover:opacity-100 rounded-sm transition-all duration-200 hover:bg-gray-3 dark:hover:bg-gray-5 disabled:pointer-events-none disabled:opacity-45 disabled:hover:opacity-45"
 			>
 				{props.children}
 			</Tooltip.Trigger>

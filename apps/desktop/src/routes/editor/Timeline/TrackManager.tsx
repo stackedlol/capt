@@ -127,12 +127,12 @@ function TrackTile(props: {
 					{props.option.icon()}
 				</span>
 				<Show when={isOn()}>
-					<span class="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-ed-accent text-white ring-2 ring-ed-card">
+					<span class="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-sm bg-ed-accent text-white ring-2 ring-ed-card">
 						<IconLucideCheck class="size-2" />
 					</span>
 				</Show>
 				<Show when={count() > 0}>
-					<span class="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-ed-text-1 px-1 text-[9px] font-semibold leading-none tabular-nums text-ed-card ring-2 ring-ed-card">
+					<span class="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-sm bg-ed-text-1 px-1 text-[9px] font-semibold leading-none tabular-nums text-ed-card ring-2 ring-ed-card">
 						{count()}
 					</span>
 				</Show>

@@ -226,6 +226,190 @@
 		0 16px 40px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--ed-line);
 }
 
+:root {
+	--red-1: #fffbfb;
+	--red-2: #fff4f4;
+	--red-3: #ffe8e8;
+	--red-4: #ffd7d8;
+	--red-5: #ffc4c6;
+	--red-6: #f6abad;
+	--red-7: #e98589;
+	--red-8: #dc5359;
+	--red-9: #d1121b;
+	--red-10: #ba0f17;
+	--red-11: #a50e16;
+	--red-12: #4a080c;
+
+	--navy-1: #fafbfd;
+	--navy-2: #f3f5fa;
+	--navy-3: #e7ebf5;
+	--navy-4: #d8deef;
+	--navy-5: #c5cee6;
+	--navy-6: #aebbe0;
+	--navy-7: #8796c4;
+	--navy-8: #5a6ca6;
+	--navy-9: #1b2d6b;
+	--navy-10: #15255c;
+	--navy-11: #22397f;
+	--navy-12: #0c1634;
+
+	--blue-1: var(--navy-1);
+	--blue-2: var(--navy-2);
+	--blue-3: var(--navy-3);
+	--blue-4: var(--navy-4);
+	--blue-5: var(--navy-5);
+	--blue-6: var(--navy-6);
+	--blue-7: var(--navy-7);
+	--blue-8: var(--navy-8);
+	--blue-9: var(--navy-9);
+	--blue-10: var(--navy-10);
+	--blue-11: var(--navy-11);
+	--blue-12: var(--navy-12);
+
+	--red-50: #fff1f1;
+	--red-100: #ffc4c6;
+	--red-200: #e98589;
+	--red-300: #d1121b;
+	--red-400: #ba0f17;
+	--red-transparent-20: rgba(209, 18, 27, 0.2);
+
+	--blue-50: #f3f5fa;
+	--blue-100: #c5cee6;
+	--blue-200: #8796c4;
+	--blue-300: #1b2d6b;
+	--blue-400: #15255c;
+	--blue-500: var(--navy-9);
+	--blue-transparent-0: rgba(27, 45, 107, 0);
+	--blue-transparent-10: rgba(27, 45, 107, 0.1);
+	--blue-transparent-20: rgba(27, 45, 107, 0.2);
+
+	--gray-50: #ffffff;
+	--gray-100: #f6f6f5;
+	--gray-200: #e6e6e4;
+	--gray-300: #cfcfcc;
+	--gray-400: #85858a;
+	--gray-450: #3d3d40;
+	--gray-500: #0b0b0c;
+
+	--text-primary: rgba(11, 11, 12, 0.94);
+	--text-secondary: rgba(11, 11, 12, 0.8);
+	--text-tertiary: rgba(11, 11, 12, 0.56);
+
+	--shadow-s: 0 0 0 1px rgba(0, 0, 0, 0.06);
+
+	--ed-window: #f3f3f2;
+	--ed-card: #ffffff;
+	--ed-card-2: #f7f7f6;
+	--ed-stage: #eaeae8;
+	--ed-text-1: #0b0b0c;
+	--ed-text-2: #5f5f64;
+	--ed-text-3: #9a9aa0;
+	--ed-accent: #1b2d6b;
+	--ed-accent-2: #24398a;
+	--ed-playhead: #1b2d6b;
+	--ed-card-shadow: 0 0 0 1px var(--ed-line);
+	--ed-pop-shadow:
+		0 12px 28px -14px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--ed-line-strong);
+}
+
+:root.dark {
+	--navy-1: #090b12;
+	--navy-2: #0d111c;
+	--navy-3: #121a2e;
+	--navy-4: #172140;
+	--navy-5: #1c2950;
+	--navy-6: #23335f;
+	--navy-7: #2d4078;
+	--navy-8: #34498a;
+	--navy-9: #3552a8;
+	--navy-10: #4565c4;
+	--navy-11: #9fb2ec;
+	--navy-12: #dde4fa;
+
+	--blue-50: #0d111c;
+	--blue-100: #172140;
+	--blue-200: #23335f;
+	--blue-300: #3552a8;
+	--blue-400: #4565c4;
+	--blue-500: #3552a8;
+	--blue-transparent-0: rgba(53, 82, 168, 0);
+	--blue-transparent-10: rgba(53, 82, 168, 0.1);
+	--blue-transparent-20: rgba(53, 82, 168, 0.2);
+
+	--red-1: #110809;
+	--red-2: #17090b;
+	--red-3: #240b0e;
+	--red-4: #330c10;
+	--red-5: #430e13;
+	--red-6: #561016;
+	--red-7: #7a0a10;
+	--red-8: #a20e16;
+	--red-9: #d1121b;
+	--red-10: #e11c25;
+	--red-11: #ff6166;
+	--red-12: #ffd9da;
+
+	--red-50: #1a0a0c;
+	--red-100: #330c10;
+	--red-200: #561016;
+	--red-300: #d1121b;
+	--red-400: #e11c25;
+
+	--gray-1: #0a0a0b;
+	--gray-2: #111112;
+	--gray-3: #17171a;
+	--gray-4: #1e1e21;
+	--gray-5: #252529;
+	--gray-6: #2d2d32;
+	--gray-7: #38383e;
+	--gray-8: #4a4a51;
+	--gray-9: #66666e;
+	--gray-10: #77777f;
+	--gray-11: #a1a1a8;
+	--gray-12: #ededef;
+
+	--gray-50: #0a0a0b;
+	--gray-100: #111112;
+	--gray-200: #1e1e21;
+	--gray-300: #2d2d32;
+	--gray-400: #a1a1a8;
+	--gray-450: #e4e4e6;
+	--gray-500: #f4f4f5;
+
+	--gray-50-transparent-50: rgba(10, 10, 11, 0.5);
+	--gray-100-transparent-50: rgba(17, 17, 18, 0.5);
+	--gray-200-transparent-50: rgba(30, 30, 33, 0.5);
+	--gray-300-transparent-50: rgba(45, 45, 50, 0.5);
+
+	--transparent-window: rgba(10, 10, 11, 0.9);
+
+	--text-primary: rgba(237, 237, 239, 0.95);
+	--text-secondary: rgba(237, 237, 239, 0.8);
+	--text-tertiary: rgba(237, 237, 239, 0.56);
+
+	--shadow-s: 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+	--ed-window: #0a0a0b;
+	--ed-card: #111112;
+	--ed-card-2: #161618;
+	--ed-stage: #070708;
+	--ed-line: rgba(255, 255, 255, 0.07);
+	--ed-line-strong: rgba(255, 255, 255, 0.12);
+	--ed-text-1: #ededef;
+	--ed-text-2: #96969e;
+	--ed-text-3: #5c5c64;
+	--ed-ctl: rgba(255, 255, 255, 0.05);
+	--ed-ctl-hover: rgba(255, 255, 255, 0.08);
+	--ed-ctl-active: rgba(255, 255, 255, 0.12);
+	--ed-accent: #4565c4;
+	--ed-accent-2: #5677d6;
+	--ed-playhead: #7f9cf0;
+	--ed-thumb: #ededef;
+	--ed-card-shadow: 0 0 0 1px var(--ed-line);
+	--ed-pop-shadow:
+		0 16px 36px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--ed-line-strong);
+}
+
 .dark .dark-button-shadow {
 	box-shadow: 0 1.5px 0 0 rgba(0, 0, 0, 0.1) inset;
 }
@@ -576,7 +760,7 @@
 [data-macos-visual-system="liquid-glass"][data-macos-native-material="panel"]
 	.cap-window-body
 	:is(button, [role="button"], div):not(
-		.rounded-full,
+		.rounded-sm,
 		.rounded-none,
 		:focus-visible
 	):is(.bg-gray-3, .bg-gray-4, .bg-gray-5) {
@@ -601,7 +785,7 @@
    change, not an inset bevel. */
 [data-macos-visual-system="liquid-glass"][data-macos-native-material="panel"]
 	.cap-window-body
-	button:not(.rounded-full, .rounded-none, :focus-visible, :disabled):is(
+	button:not(.rounded-sm, .rounded-none, :focus-visible, :disabled):is(
 		.bg-gray-3,
 		.bg-gray-4,
 		.bg-gray-5
@@ -612,7 +796,7 @@
 [data-macos-visual-system="liquid-glass"][data-macos-native-material="panel"]
 	.cap-window-body
 	:is(button, [role="button"], div):not(
-		.rounded-full,
+		.rounded-sm,
 		.rounded-none
 	).rounded-lg:is(.bg-gray-3, .bg-gray-4, .bg-gray-5) {
 	border-radius: 10px;
@@ -801,7 +985,7 @@
 	height: 32px;
 	color: var(--macos-settings-muted);
 	background: var(--macos-settings-fill);
-	border-radius: 999px;
+	border-radius: 3px;
 }
 
 [data-macos-native-material="settings"] .cap-settings-profile-image {
@@ -810,7 +994,7 @@
 	flex: 0 0 32px;
 	object-fit: cover;
 	background: var(--macos-settings-fill);
-	border-radius: 999px;
+	border-radius: 3px;
 }
 
 [data-macos-native-material="settings"] .cap-settings-profile-copy {
@@ -829,7 +1013,7 @@
 		var(--macos-settings-fill)
 	);
 	background-size: 200% 100%;
-	border-radius: 999px;
+	border-radius: 3px;
 	animation: cap-settings-skeleton 1.2s ease-in-out infinite;
 }
 
@@ -1049,8 +1233,8 @@
 	transform: none;
 }
 
-[data-macos-native-material="settings"] .cap-settings-content .rounded-full {
-	border-radius: 999px;
+[data-macos-native-material="settings"] .cap-settings-content .rounded-sm {
+	border-radius: 3px;
 }
 
 [data-macos-native-material="settings"] .cap-toggle {
@@ -1209,7 +1393,7 @@
 	top: 55%;
 	width: 20px;
 	height: 20px;
-	border-radius: 999px;
+	border-radius: 3px;
 	border: 2px solid rgba(255, 255, 255, 0.85);
 	transform: translate(-50%, -50%) scale(0);
 	opacity: 0;

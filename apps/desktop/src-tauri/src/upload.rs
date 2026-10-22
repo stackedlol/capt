@@ -1,10 +1,9 @@
 // credit @filleduchaos
 
 use crate::{
-    UploadProgress, VideoUploadInfo,
-    api::{self, PresignedS3PutRequest, PresignedS3PutRequestMethod, S3VideoMeta, UploadedPart},
+    VideoUploadInfo,
+    api::{self, PresignedS3PutRequest, S3VideoMeta, UploadedPart},
     http_client::{HttpClient, RetryableHttpClient},
-    telemetry::{AnalyticsEvent, async_capture_event},
     web_api::{AuthedApiError, ManagerExt},
 };
 use async_stream::{stream, try_stream};
@@ -34,7 +33,7 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Manager, ipc::Channel};
+use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 use tokio::{
     fs::File,
@@ -42,12 +41,10 @@ use tokio::{
     task::{self, JoinHandle},
     time::{self, Instant, timeout},
 };
-use tokio_util::io::ReaderStream;
 use tracing::{Span, debug, error, info, info_span, instrument, trace, warn};
 
 pub(crate) mod lifecycle;
 pub(crate) mod preparation;
-pub(crate) mod recovery_age;
 pub(crate) mod resume;
 use tracing_futures::Instrument;
 
@@ -118,14 +115,6 @@ fn validate_uploaded_segment_inventory(
         }
     }
     Ok(())
-}
-
-pub struct UploadedItem {
-    pub link: String,
-    pub id: String,
-    pub object_identity: Option<String>,
-    // #[allow(unused)]
-    // pub config: S3UploadMeta,
 }
 
 #[derive(Clone, Serialize, Type, tauri_specta::Event)]
@@ -227,64 +216,6 @@ fn content_type_for_upload_subpath(subpath: &str) -> &'static str {
     }
 }
 
-pub fn reusable_video_id(
-    sharing: Option<&cap_project::SharingMeta>,
-    upload: Option<&cap_project::UploadMeta>,
-) -> Option<String> {
-    sharing
-        .map(|sharing| sharing.id.clone())
-        .or_else(|| match upload {
-            Some(cap_project::UploadMeta::SinglePartUpload { video_id, .. })
-            | Some(cap_project::UploadMeta::SegmentUpload { video_id, .. })
-            | Some(cap_project::UploadMeta::MultipartUpload { video_id, .. }) => {
-                Some(video_id.clone())
-            }
-            _ => None,
-        })
-}
-
-enum ReplacementAttempt<T> {
-    Completed(T),
-    RestartRequired,
-}
-
-async fn with_replacement_restart<T, F, Fut>(
-    replace_existing: bool,
-    mut attempt: F,
-) -> Result<T, AuthedApiError>
-where
-    F: FnMut(bool) -> Fut,
-    Fut: std::future::Future<Output = Result<ReplacementAttempt<T>, AuthedApiError>>,
-{
-    lifecycle::cancellable(async {}).await?;
-    match attempt(false).await? {
-        ReplacementAttempt::Completed(value) => return Ok(value),
-        ReplacementAttempt::RestartRequired if replace_existing => {}
-        ReplacementAttempt::RestartRequired => {
-            return Err("Unexpected replacement restart response; local files retained".into());
-        }
-    }
-    lifecycle::cancellable(async {}).await?;
-    match attempt(true).await? {
-        ReplacementAttempt::Completed(value) => Ok(value),
-        ReplacementAttempt::RestartRequired => {
-            Err("Replacement restart was rejected again; local files retained".into())
-        }
-    }
-}
-
-fn validate_replacement_restart_session(
-    restarted: bool,
-    upload_id: &str,
-) -> Result<(), AuthedApiError> {
-    if restarted && !upload_id.starts_with("cap-reupload.") {
-        return Err(
-            "Replacement restart requires a signed upload session; local files retained".into(),
-        );
-    }
-    Ok(())
-}
-
 #[derive(PartialEq, Eq)]
 struct LegacyReplacementChunk {
     offset: u64,
@@ -293,54 +224,11 @@ struct LegacyReplacementChunk {
 }
 
 struct LegacyReplacementInput {
-    path: PathBuf,
     size: u64,
-    modified: std::time::SystemTime,
     chunks: Mutex<HashMap<u32, LegacyReplacementChunk>>,
 }
 
 impl LegacyReplacementInput {
-    async fn identity(
-        path: PathBuf,
-    ) -> Result<(PathBuf, u64, std::time::SystemTime), AuthedApiError> {
-        lifecycle::file_io(move || {
-            let metadata = std::fs::symlink_metadata(&path)?;
-            #[cfg(windows)]
-            {
-                use std::os::windows::fs::MetadataExt;
-                if metadata.file_attributes() & 0x400 != 0 {
-                    return Err(io::Error::other("Replacement input is a reparse point"));
-                }
-            }
-            if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() == 0 {
-                return Err(io::Error::other(
-                    "Replacement input must be a nonempty regular file",
-                ));
-            }
-            Ok((path.canonicalize()?, metadata.len(), metadata.modified()?))
-        })
-        .await
-        .map_err(|error| error.to_string().into())
-    }
-
-    async fn capture(path: &Path) -> Result<Self, AuthedApiError> {
-        let (path, size, modified) = Self::identity(path.to_path_buf()).await?;
-        Ok(Self {
-            path,
-            size,
-            modified,
-            chunks: Mutex::new(HashMap::new()),
-        })
-    }
-
-    async fn verify(&self, path: &Path) -> Result<(), AuthedApiError> {
-        let (path, size, modified) = Self::identity(path.to_path_buf()).await?;
-        if path != self.path || size != self.size || modified != self.modified {
-            return Err("Replacement input changed during upload; local files retained".into());
-        }
-        Ok(())
-    }
-
     fn inspect_chunk(&self, chunk: &Chunk, record: bool) -> io::Result<()> {
         if chunk.total_size != self.size
             || chunk.chunk.is_empty()
@@ -371,359 +259,6 @@ impl LegacyReplacementInput {
         }
         Ok(())
     }
-
-    fn verify_parts(&self, parts: &[UploadedPart]) -> Result<(), AuthedApiError> {
-        let chunks = self.chunks.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut offset = 0_u64;
-        if parts.len() != chunks.len() {
-            return Err("Replacement upload parts are incomplete".into());
-        }
-        for (index, part) in parts.iter().enumerate() {
-            let Some(chunk) = chunks.get(&part.part_number) else {
-                return Err("Replacement upload part was not verified".into());
-            };
-            if part.part_number as usize != index + 1
-                || chunk.offset != offset
-                || chunk.size != part.size
-                || part.total_size != self.size
-            {
-                return Err("Replacement upload part inventory changed".into());
-            }
-            offset = offset
-                .checked_add(part.size as u64)
-                .ok_or("Replacement upload size overflow")?;
-        }
-        if offset != self.size {
-            return Err("Replacement upload does not cover the original file".into());
-        }
-        Ok(())
-    }
-}
-
-fn legacy_replacement_session(replace_existing: bool, upload_id: &str) -> bool {
-    replace_existing && !upload_id.starts_with("cap-reupload.")
-}
-
-#[instrument(skip(app, channel, file_path, screenshot_path))]
-pub async fn upload_video(
-    app: &AppHandle,
-    video_id: String,
-    file_path: PathBuf,
-    screenshot_path: PathBuf,
-    replace_existing: bool,
-    channel: Option<Channel<UploadProgress>>,
-) -> Result<UploadedItem, AuthedApiError> {
-    let _active_upload = ActiveUploadGuard::new(&ACTIVE_UPLOADS);
-    info!("Uploading video {video_id}...");
-
-    let start = Instant::now();
-    let initial_upload = lifecycle::cancellable(api::upload_multipart_initiate(
-        app,
-        &video_id,
-        replace_existing,
-    ))
-    .await??;
-    let legacy_input = std::sync::OnceLock::<Arc<LegacyReplacementInput>>::new();
-    let video_fut = {
-        let file_path = &file_path;
-        let video_id = &video_id;
-        let channel = &channel;
-        let legacy_input = &legacy_input;
-        let initial_upload = &initial_upload;
-        with_replacement_restart(replace_existing, move |restarted| async move {
-            if let Some(input) = legacy_input.get() {
-                input.verify(file_path).await?;
-            }
-            let upload = if restarted {
-                lifecycle::cancellable(api::upload_multipart_initiate(
-                    app,
-                    video_id,
-                    replace_existing,
-                ))
-                .await??
-            } else {
-                api::MultipartUploadInitiateResponse {
-                    upload_id: initial_upload.upload_id.clone(),
-                    provider: initial_upload.provider.clone(),
-                }
-            };
-            validate_replacement_restart_session(restarted, &upload.upload_id)?;
-            if legacy_replacement_session(replace_existing, &upload.upload_id)
-                && legacy_input.get().is_none()
-            {
-                legacy_input
-                    .set(Arc::new(LegacyReplacementInput::capture(file_path).await?))
-                    .map_err(|_| "Replacement input identity was already established")?;
-            }
-            let input = legacy_input.get();
-            let is_drive_upload =
-                is_google_drive_upload(upload.provider.as_deref(), &upload.upload_id);
-            let upload_id = upload.upload_id;
-            let failed_chunks: Arc<Mutex<Vec<FailedChunkInfo>>> = Arc::new(Mutex::new(Vec::new()));
-
-            let stream = progress(
-                app.clone(),
-                video_id.clone(),
-                multipart_uploader(
-                    app.clone(),
-                    video_id.clone(),
-                    upload_id.clone(),
-                    is_drive_upload,
-                    from_pending_file_to_chunks(file_path.clone(), None).map({
-                        let input = input.cloned();
-                        move |chunk| {
-                            let chunk = chunk?;
-                            if let Some(input) = &input {
-                                input.inspect_chunk(&chunk, !restarted)?;
-                            }
-                            Ok(chunk)
-                        }
-                    }),
-                    failed_chunks.clone(),
-                ),
-            );
-
-            let stream = if let Some(channel) = channel.clone() {
-                tauri_channel_progress(channel, stream).boxed()
-            } else {
-                stream.boxed()
-            };
-
-            let mut parts = stream.try_collect::<Vec<_>>().await?;
-
-            let failed =
-                std::mem::take(&mut *failed_chunks.lock().unwrap_or_else(PoisonError::into_inner));
-            if !failed.is_empty() {
-                info!(
-                    count = failed.len(),
-                    "Retrying {} failed chunk(s) after main upload pass",
-                    failed.len()
-                );
-                let retry_parts = retry_failed_chunks_with_input(
-                    app,
-                    video_id,
-                    &upload_id,
-                    file_path,
-                    failed,
-                    input.map(Arc::as_ref),
-                )
-                .await?;
-                parts.extend(retry_parts);
-            }
-
-            let mut deduplicated_parts = HashMap::new();
-            for part in parts {
-                deduplicated_parts.insert(part.part_number, part);
-            }
-            parts = deduplicated_parts.into_values().collect::<Vec<_>>();
-            parts.sort_by_key(|part| part.part_number);
-
-            let metadata = build_video_meta(file_path)
-                .map_err(|e| error!("Failed to get video metadata: {e}"))
-                .ok();
-
-            if let Some(input) = input {
-                input.verify_parts(&parts)?;
-                input.verify(file_path).await?;
-            }
-            let completed_identity = match api::upload_multipart_complete_outcome(
-                app,
-                video_id,
-                &upload_id,
-                &parts,
-                metadata.clone(),
-                replace_existing,
-            )
-            .await?
-            {
-                api::MultipartCompletion::Completed(identity) => identity,
-                api::MultipartCompletion::ReplacementRestartRequired if input.is_some() => {
-                    return Ok(ReplacementAttempt::RestartRequired);
-                }
-                api::MultipartCompletion::ReplacementRestartRequired => {
-                    return Err(
-                        "Signed replacement upload was rejected; local files retained".into(),
-                    );
-                }
-            };
-            let object_identity = if is_drive_upload {
-                parts
-                    .iter()
-                    .rev()
-                    .find_map(|part| part.object_identity.clone())
-            } else {
-                completed_identity
-            };
-            Ok(ReplacementAttempt::Completed((metadata, object_identity)))
-        })
-    };
-
-    // TODO: We don't report progress on image upload
-    let bytes = compress_image(screenshot_path).await?;
-    let thumbnail_fut = singlepart_uploader(
-        app.clone(),
-        PresignedS3PutRequest {
-            video_id: video_id.clone(),
-            subpath: "screenshot/screen-capture.jpg".to_string(),
-            method: PresignedS3PutRequestMethod::Put,
-            meta: None,
-        },
-        bytes.len() as u64,
-        stream::once(async move { Ok::<_, std::io::Error>(bytes::Bytes::from(bytes)) }),
-    );
-
-    let (video_result, thumbnail_result): (Result<_, AuthedApiError>, Result<_, AuthedApiError>) =
-        tokio::join!(video_fut, thumbnail_fut);
-
-    async_capture_event(
-        app,
-        match &video_result {
-            Ok((meta, _)) => AnalyticsEvent::MultipartUploadComplete {
-                duration: start.elapsed(),
-                length: meta
-                    .as_ref()
-                    .map(|v| Duration::from_secs(v.duration_in_secs as u64))
-                    .unwrap_or_default(),
-                size: std::fs::metadata(file_path)
-                    .map(|m| ((m.len() as f64) / 1_000_000.0) as u64)
-                    .unwrap_or_default(),
-            },
-            Err(err) => AnalyticsEvent::MultipartUploadFailed {
-                duration: start.elapsed(),
-                error: err.to_string(),
-            },
-        },
-    );
-
-    let (_, object_identity) = video_result?;
-    thumbnail_result?;
-    lifecycle::cancellable(async {}).await?;
-    emit_upload_complete(app, &video_id);
-
-    Ok(UploadedItem {
-        link: app.make_app_url(format!("/s/{video_id}")).await,
-        id: video_id,
-        object_identity,
-    })
-}
-
-/// Open a file and construct a stream to it.
-async fn file_reader_stream(path: impl AsRef<Path>) -> Result<(ReaderStream<File>, u64), String> {
-    let file = File::open(path)
-        .await
-        .map_err(|e| format!("Failed to open file: {e}"))?;
-
-    let metadata = file
-        .metadata()
-        .await
-        .map_err(|e| format!("Failed to get file metadata: {e}"))?;
-
-    Ok((ReaderStream::new(file), metadata.len()))
-}
-
-fn screenshot_upload_subpath(content_type: &str) -> &'static str {
-    if content_type.eq_ignore_ascii_case("image/png") {
-        "screenshot/screen-capture.png"
-    } else {
-        "screenshot/screen-capture.jpg"
-    }
-}
-
-fn screenshot_content_type_from_path(path: &Path) -> &'static str {
-    match path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("png") => "image/png",
-        _ => "image/jpeg",
-    }
-}
-
-pub async fn upload_screenshot_bytes(
-    app: &AppHandle,
-    image_bytes: Vec<u8>,
-    content_type: &str,
-    video_id: Option<String>,
-    organization_id: Option<String>,
-) -> Result<UploadedItem, AuthedApiError> {
-    let _active_upload = ActiveUploadGuard::new(&ACTIVE_UPLOADS);
-    let s3_config = create_or_get_video(app, true, video_id, None, None, organization_id).await?;
-    let subpath = screenshot_upload_subpath(content_type);
-    let total_size = image_bytes.len() as u64;
-
-    singlepart_uploader(
-        app.clone(),
-        PresignedS3PutRequest {
-            video_id: s3_config.id.clone(),
-            subpath: subpath.to_string(),
-            method: PresignedS3PutRequestMethod::Put,
-            meta: None,
-        },
-        total_size,
-        stream::once(async move { Ok::<_, std::io::Error>(Bytes::from(image_bytes)) }),
-    )
-    .await?;
-
-    Ok(UploadedItem {
-        link: app.make_app_url(format!("/s/{}", &s3_config.id)).await,
-        id: s3_config.id,
-        object_identity: None,
-    })
-}
-
-pub async fn upload_screenshot_file(
-    app: &AppHandle,
-    file_path: PathBuf,
-    video_id: Option<String>,
-    organization_id: Option<String>,
-) -> Result<UploadedItem, AuthedApiError> {
-    let _active_upload = ActiveUploadGuard::new(&ACTIVE_UPLOADS);
-    let content_type = screenshot_content_type_from_path(&file_path);
-    let s3_config = create_or_get_video(app, true, video_id, None, None, organization_id).await?;
-    let subpath = screenshot_upload_subpath(content_type);
-    let (stream, total_size) = file_reader_stream(file_path).await?;
-
-    singlepart_uploader(
-        app.clone(),
-        PresignedS3PutRequest {
-            video_id: s3_config.id.clone(),
-            subpath: subpath.to_string(),
-            method: PresignedS3PutRequestMethod::Put,
-            meta: None,
-        },
-        total_size,
-        stream,
-    )
-    .await?;
-
-    Ok(UploadedItem {
-        link: app.make_app_url(format!("/s/{}", &s3_config.id)).await,
-        id: s3_config.id,
-        object_identity: None,
-    })
-}
-
-#[instrument(skip(app))]
-pub async fn create_or_get_video(
-    app: &AppHandle,
-    is_screenshot: bool,
-    video_id: Option<String>,
-    name: Option<String>,
-    meta: Option<S3VideoMeta>,
-    organization_id: Option<String>,
-) -> Result<S3UploadMeta, AuthedApiError> {
-    create_or_get_video_with_mode(
-        app,
-        is_screenshot,
-        video_id,
-        name,
-        meta,
-        organization_id,
-        "desktopMP4",
-    )
-    .await
 }
 
 #[instrument(skip(app))]
@@ -883,7 +418,6 @@ impl InstantMultipartUpload {
         let recording_dir = session.directory.clone();
         let worker_session = session.clone();
         let handle = spawn_actor(async move {
-            let start = Instant::now();
             let result = worker_session
                 .run(async {
                     worker_session.acquire()?;
@@ -902,26 +436,6 @@ impl InstantMultipartUpload {
                     .await
                 })
                 .await;
-
-            async_capture_event(
-                &app,
-                match &result {
-                    Ok(meta) => AnalyticsEvent::MultipartUploadComplete {
-                        duration: start.elapsed(),
-                        length: meta
-                            .as_ref()
-                            .map(|v| Duration::from_secs(v.duration_in_secs as u64))
-                            .unwrap_or_default(),
-                        size: std::fs::metadata(file_path)
-                            .map(|m| ((m.len() as f64) / 1_000_000.0) as u64)
-                            .unwrap_or_default(),
-                    },
-                    Err(err) => AnalyticsEvent::MultipartUploadFailed {
-                        duration: start.elapsed(),
-                        error: err.to_string(),
-                    },
-                },
-            );
 
             result.map(|_| ())
         });
@@ -1324,7 +838,6 @@ impl SegmentUploader {
         Self {
             session,
             handle: spawn_actor(async move {
-                let start = Instant::now();
                 let result = worker_session
                     .run(async {
                         worker_session.acquire()?;
@@ -1343,21 +856,6 @@ impl SegmentUploader {
                         .await
                     })
                     .await;
-
-                async_capture_event(
-                    &app,
-                    match &result {
-                        Ok(total_bytes) => AnalyticsEvent::MultipartUploadComplete {
-                            duration: start.elapsed(),
-                            length: start.elapsed(),
-                            size: total_bytes / (1024 * 1024),
-                        },
-                        Err(err) => AnalyticsEvent::MultipartUploadFailed {
-                            duration: start.elapsed(),
-                            error: err.to_string(),
-                        },
-                    },
-                );
 
                 result.map(|_| ())
             }),
@@ -2978,175 +2476,15 @@ pub fn emit_upload_complete(app: &AppHandle, video_id: &str) {
     .ok();
 }
 
-/// Track the upload progress into a Tauri channel
-fn tauri_channel_progress<T: UploadedChunk, E>(
-    channel: Channel<UploadProgress>,
-    stream: impl Stream<Item = Result<T, E>>,
-) -> impl Stream<Item = Result<T, E>> {
-    let mut uploaded = 0u64;
-
-    stream! {
-        let mut stream = pin!(stream);
-
-        while let Some(chunk) = stream.next().await {
-            if let Ok(chunk) = &chunk {
-                uploaded += chunk.size();
-
-                channel.send(UploadProgress {
-                    progress: uploaded as f64 / chunk.total() as f64
-                })
-                .ok();
-            }
-
-            yield chunk;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    #[tokio::test]
-    async fn restart_requires_a_signed_session_before_any_further_upload_work() {
-        for upload_id in ["legacy-again", "cap-reupload.signed"] {
-            let uploads = AtomicUsize::new(0);
-            let uploads = &uploads;
-            let result = with_replacement_restart(true, |restarted| async move {
-                validate_replacement_restart_session(
-                    restarted,
-                    if restarted { upload_id } else { "legacy-first" },
-                )?;
-                uploads.fetch_add(1, Ordering::AcqRel);
-                Ok(if restarted {
-                    ReplacementAttempt::Completed(())
-                } else {
-                    ReplacementAttempt::RestartRequired
-                })
-            })
-            .await;
-            assert_eq!(result.is_ok(), upload_id.starts_with("cap-reupload."));
-            assert_eq!(
-                uploads.load(Ordering::Acquire),
-                if result.is_ok() { 2 } else { 1 }
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn legacy_replacement_restarts_the_entire_attempt_once() {
-        let stages = Mutex::new(Vec::new());
-        let identity = with_replacement_restart(true, |restarted| {
-            let mut stages = stages.lock().unwrap();
-            let session = if restarted { "fresh" } else { "legacy" };
-            stages.extend([
-                (session, "initiate"),
-                (session, "parts"),
-                (session, "complete"),
-            ]);
-            std::future::ready(Ok(if restarted {
-                ReplacementAttempt::Completed("fresh-object")
-            } else {
-                ReplacementAttempt::RestartRequired
-            }))
-        })
-        .await
-        .unwrap();
-        assert_eq!(identity, "fresh-object");
-        assert_eq!(
-            *stages.lock().unwrap(),
-            vec![
-                ("legacy", "initiate"),
-                ("legacy", "parts"),
-                ("legacy", "complete"),
-                ("fresh", "initiate"),
-                ("fresh", "parts"),
-                ("fresh", "complete"),
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn replacement_restart_is_bounded_and_never_turns_failure_into_success() {
-        for (replace_existing, expected) in [(false, 1), (true, 2)] {
-            let calls = AtomicUsize::new(0);
-            let result = with_replacement_restart(replace_existing, |_| {
-                calls.fetch_add(1, Ordering::AcqRel);
-                std::future::ready(Ok::<ReplacementAttempt<()>, AuthedApiError>(
-                    ReplacementAttempt::RestartRequired,
-                ))
-            })
-            .await;
-            assert!(result.is_err());
-            assert_eq!(calls.load(Ordering::Acquire), expected);
-        }
-        for restart_first in [false, true] {
-            let calls = AtomicUsize::new(0);
-            let result = with_replacement_restart(true, |restarted| {
-                calls.fetch_add(1, Ordering::AcqRel);
-                std::future::ready(if restart_first && !restarted {
-                    Ok(ReplacementAttempt::<()>::RestartRequired)
-                } else {
-                    Err(AuthedApiError::InvalidAuthentication)
-                })
-            })
-            .await;
-            assert!(matches!(result, Err(AuthedApiError::InvalidAuthentication)));
-            assert_eq!(
-                calls.load(Ordering::Acquire),
-                if restart_first { 2 } else { 1 }
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn successful_or_dropped_attempt_cannot_start_a_replacement() {
-        let calls = AtomicUsize::new(0);
-        let result = with_replacement_restart(true, |_| {
-            calls.fetch_add(1, Ordering::AcqRel);
-            std::future::ready(Ok(ReplacementAttempt::Completed(None::<String>)))
-        })
-        .await
-        .unwrap();
-        assert_eq!(result, None);
-        assert_eq!(calls.load(Ordering::Acquire), 1);
-        let future = with_replacement_restart(true, |_| {
-            calls.fetch_add(1, Ordering::AcqRel);
-            std::future::pending::<Result<ReplacementAttempt<()>, AuthedApiError>>()
-        });
-        let mut future = Box::pin(future);
-        assert!(matches!(
-            futures::poll!(&mut future),
-            std::task::Poll::Pending
-        ));
-        drop(future);
-        assert_eq!(calls.load(Ordering::Acquire), 2);
-    }
-
-    #[test]
-    fn only_raw_replacement_sessions_need_byte_receipts() {
-        for replace_existing in [false, true] {
-            assert!(!legacy_replacement_session(
-                replace_existing,
-                "cap-reupload.signed-token"
-            ));
-        }
-        for upload_id in [
-            "raw-s3-id",
-            "https://www.googleapis.com/upload/raw-drive-session",
-        ] {
-            assert!(!legacy_replacement_session(false, upload_id));
-            assert!(legacy_replacement_session(true, upload_id));
-        }
-    }
-
     fn replacement_input() -> LegacyReplacementInput {
         LegacyReplacementInput {
-            path: PathBuf::from("unused"),
             size: 4,
-            modified: std::time::SystemTime::UNIX_EPOCH,
             chunks: Mutex::new(HashMap::new()),
         }
     }
@@ -3194,94 +2532,6 @@ mod tests {
     }
 
     #[test]
-    fn replacement_completion_requires_the_complete_verified_inventory() {
-        let input = replacement_input();
-        input
-            .inspect_chunk(&replacement_chunk(b"test"), true)
-            .unwrap();
-        assert!(input.verify_parts(&[]).is_err());
-        let mut parts = vec![UploadedPart {
-            part_number: 1,
-            etag: "fresh-etag".into(),
-            size: 4,
-            total_size: 4,
-            object_identity: None,
-        }];
-        input.verify_parts(&parts).unwrap();
-        parts[0].size = 3;
-        assert!(input.verify_parts(&parts).is_err());
-        parts[0].size = 4;
-        parts[0].total_size = 5;
-        assert!(input.verify_parts(&parts).is_err());
-        parts[0].total_size = 4;
-        parts[0].part_number = 2;
-        assert!(input.verify_parts(&parts).is_err());
-    }
-
-    #[tokio::test]
-    async fn changed_local_input_blocks_fresh_initiation_after_restart_response() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("output.mp4");
-        std::fs::write(&path, b"test").unwrap();
-        let input = LegacyReplacementInput::capture(&path).await.unwrap();
-        let initiations = AtomicUsize::new(0);
-        let result = with_replacement_restart(true, |restarted| {
-            let path = &path;
-            let input = &input;
-            let initiations = &initiations;
-            async move {
-                input.verify(path).await?;
-                initiations.fetch_add(1, Ordering::AcqRel);
-                if !restarted {
-                    std::fs::write(path, b"changed").unwrap();
-                    return Ok(ReplacementAttempt::RestartRequired);
-                }
-                Ok(ReplacementAttempt::Completed(()))
-            }
-        })
-        .await;
-        assert!(result.is_err());
-        assert_eq!(initiations.load(Ordering::Acquire), 1);
-        assert_eq!(std::fs::read(&path).unwrap(), b"changed");
-    }
-
-    #[test]
-    fn reupload_keeps_sharing_identity_after_completion_or_failure() {
-        let sharing = cap_project::SharingMeta {
-            id: "existing-video".into(),
-            link: "https://cap.link/existing-video".into(),
-            content_hash: None,
-        };
-        for upload in [
-            None,
-            Some(cap_project::UploadMeta::Complete),
-            Some(cap_project::UploadMeta::Failed {
-                error: "offline".into(),
-            }),
-        ] {
-            assert_eq!(
-                reusable_video_id(Some(&sharing), upload.as_ref()).as_deref(),
-                Some("existing-video")
-            );
-        }
-    }
-
-    #[test]
-    fn retry_keeps_the_reserved_identity_until_sharing_is_saved() {
-        let upload = cap_project::UploadMeta::SinglePartUpload {
-            video_id: "reserved-video".into(),
-            file_path: "output.mp4".into(),
-            screenshot_path: "display.jpg".into(),
-            recording_dir: "recording.cap".into(),
-        };
-        assert_eq!(
-            reusable_video_id(None, Some(&upload)).as_deref(),
-            Some("reserved-video")
-        );
-        assert_eq!(reusable_video_id(None, None), None);
-    }
-
-    #[test]
     fn active_upload_guards_track_overlapping_sessions() {
         let active = AtomicUsize::new(0);
         let first = ActiveUploadGuard::new(&active);
@@ -3307,26 +2557,6 @@ mod tests {
         assert_eq!(active.load(Ordering::Acquire), 1);
         drop(upload);
         assert_eq!(active.load(Ordering::Acquire), 0);
-    }
-
-    #[test]
-    fn screenshot_upload_subpath_matches_content_type() {
-        assert_eq!(
-            screenshot_upload_subpath("image/png"),
-            "screenshot/screen-capture.png"
-        );
-        assert_eq!(
-            screenshot_upload_subpath("image/jpeg"),
-            "screenshot/screen-capture.jpg"
-        );
-        assert_eq!(
-            screenshot_content_type_from_path(Path::new("screen-capture.png")),
-            "image/png"
-        );
-        assert_eq!(
-            screenshot_content_type_from_path(Path::new("screen-capture.jpg")),
-            "image/jpeg"
-        );
     }
 
     #[tokio::test]

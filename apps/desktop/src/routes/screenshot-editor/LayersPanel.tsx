@@ -252,7 +252,7 @@ export function LayersPanel() {
 							return (
 								<>
 									<Show when={isDropTarget() && !isDragging()}>
-										<div class="h-0.5 bg-blue-9 mx-2 rounded-full" />
+										<div class="h-0.5 bg-blue-9 mx-2 rounded-[1px]" />
 									</Show>
 									<div
 										data-layer-item
@@ -302,7 +302,7 @@ export function LayersPanel() {
 										</button>
 									</div>
 									<Show when={showDropIndicatorAfter()}>
-										<div class="h-0.5 bg-blue-9 mx-2 rounded-full" />
+										<div class="h-0.5 bg-blue-9 mx-2 rounded-[1px]" />
 									</Show>
 								</>
 							);
@@ -313,7 +313,7 @@ export function LayersPanel() {
 							dropTargetIndex() === reversedAnnotations().length && dragState()
 						}
 					>
-						<div class="h-0.5 bg-blue-9 mx-2 rounded-full" />
+						<div class="h-0.5 bg-blue-9 mx-2 rounded-[1px]" />
 					</Show>
 				</Show>
 			</div>

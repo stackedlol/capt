@@ -77,6 +77,7 @@ import {
 	type XY,
 	type ZoomSegment,
 } from "~/utils/tauri";
+import IconLucideAperture from "~icons/lucide/aperture";
 import IconLucideColumns2 from "~icons/lucide/columns-2";
 import IconLucideEyeOff from "~icons/lucide/eye-off";
 import IconLucideKeyboard from "~icons/lucide/keyboard";
@@ -980,7 +981,7 @@ function ConfigSidebarContent() {
 										>
 											<RadioGroup.ItemInput class="sr-only" />
 											<RadioGroup.ItemLabel class="flex items-start gap-3 p-3">
-												<RadioGroup.ItemControl class="mt-1 size-4 rounded-full border border-gray-7 data-checked:border-blue-9 data-checked:bg-blue-9" />
+												<RadioGroup.ItemControl class="mt-1 size-4 rounded-sm border border-gray-7 data-checked:border-blue-9 data-checked:bg-blue-9" />
 												<div class="flex flex-col text-left">
 													<span class="text-[13px] font-medium text-ed-text-1">
 														{option.label}
@@ -1084,8 +1085,8 @@ function ConfigSidebarContent() {
                   <RadioGroup.ItemInput class="sr-only peer" />
                   <RadioGroup.ItemControl
                     class={cx(
-                      "mr-2 w-4 h-4 rounded-full border border-gray-300",
-                      "relative after:absolute after:inset-0 after:m-auto after:block after:w-2 after:h-2 after:rounded-full",
+                      "mr-2 w-4 h-4 rounded-sm border border-gray-300",
+                      "relative after:absolute after:inset-0 after:m-auto after:block after:w-2 after:h-2 after:rounded-[1px]",
                       "after:transition-colors after:duration-200",
                       "peer-checked:border-blue-500 peer-checked:after:bg-blue-400",
                       "peer-focus-visible:ring-2 peer-focus-visible:ring-blue-400/50",
@@ -2483,7 +2484,7 @@ function BackgroundConfig(props: {
 													photo().label ?? getCurrentDesktopBackgroundLabel()
 												}
 											/>
-											<span class="flex absolute right-2 bottom-2 justify-center items-center w-7 h-7 rounded-full text-white/95 bg-black/55 backdrop-blur-sm">
+											<span class="flex absolute right-2 bottom-2 justify-center items-center w-7 h-7 rounded-sm text-white/95 bg-black/55 backdrop-blur-sm">
 												<IconLucideMonitor class="size-4" />
 											</span>
 										</button>
@@ -2571,7 +2572,7 @@ function BackgroundConfig(props: {
 									fallback={
 										<div class="flex col-span-6 justify-center items-center h-32 text-ed-text-2">
 											<div class="flex flex-col gap-2 items-center">
-												<div class="w-6 h-6 rounded-full border-2 animate-spin border-gray-5 border-t-blue-400" />
+												<div class="w-6 h-6 rounded-sm border-2 animate-spin border-gray-5 border-t-blue-400" />
 												<span>Loading wallpapers...</span>
 											</div>
 										</div>
@@ -2657,7 +2658,7 @@ function BackgroundConfig(props: {
 														path: null,
 													})
 												}
-												class="p-2 text-white rounded-full transition-colors bg-black/50 hover:bg-black/70"
+												class="p-2 text-white rounded-sm transition-colors bg-black/50 hover:bg-black/70"
 											>
 												<IconCapCircleX class="w-4 h-4" />
 											</button>
@@ -3263,7 +3264,7 @@ function CameraConfig(props: { scrollRef: HTMLDivElement }) {
 														item.y === "top" ? "top-2" : "bottom-2",
 													)}
 												>
-													<div class="size-2 shrink-0 bg-solid-white rounded-full" />
+													<div class="size-2 shrink-0 bg-solid-white rounded-[1px]" />
 												</RadioGroup.ItemControl>
 											</RadioGroup.Item>
 										);
@@ -4045,7 +4046,7 @@ function MaskSegmentConfig(props: {
 							>
 								<RadioGroup.ItemInput class="sr-only" />
 								<RadioGroup.ItemLabel class="flex items-center gap-2 p-2 text-[13px] text-ed-text-1">
-									<RadioGroup.ItemControl class="size-4 rounded-full border border-gray-7 data-checked:border-blue-9 data-checked:bg-blue-9" />
+									<RadioGroup.ItemControl class="size-4 rounded-sm border border-gray-7 data-checked:border-blue-9 data-checked:bg-blue-9" />
 									{option.label}
 								</RadioGroup.ItemLabel>
 							</RadioGroup.Item>
@@ -4081,7 +4082,7 @@ function MaskSegmentConfig(props: {
 							>
 								<RadioGroup.ItemInput class="sr-only" />
 								<RadioGroup.ItemLabel class="flex items-center gap-2 p-2 text-[13px] text-ed-text-1">
-									<RadioGroup.ItemControl class="size-4 rounded-full border border-gray-7 data-checked:border-blue-9 data-checked:bg-blue-9" />
+									<RadioGroup.ItemControl class="size-4 rounded-sm border border-gray-7 data-checked:border-blue-9 data-checked:bg-blue-9" />
 									{option.label}
 								</RadioGroup.ItemLabel>
 							</RadioGroup.Item>
@@ -4561,13 +4562,13 @@ function ZoomSegmentConfig(props: {
 										}}
 									>
 										<div
-											class="absolute z-10 w-6 h-6 rounded-full border border-gray-400 -translate-x-1/2 -translate-y-1/2 bg-gray-1"
+											class="absolute z-10 w-6 h-6 rounded-sm border border-gray-400 -translate-x-1/2 -translate-y-1/2 bg-gray-1"
 											style={{
 												left: `${mode().x * 100}%`,
 												top: `${mode().y * 100}%`,
 											}}
 										>
-											<div class="size-1.5 bg-gray-5 rounded-full" />
+											<div class="size-1.5 bg-gray-5 rounded-[1px]" />
 										</div>
 										<div class="overflow-hidden relative rounded-lg border border-gray-3 bg-gray-2">
 											<canvas
@@ -4765,7 +4766,7 @@ function ZoomMultiSegmentConfig(props: {
 						<div class="relative p-2.5 rounded-lg border border-gray-4 bg-gray-3 group">
 							<button
 								type="button"
-								class="hidden absolute top-1.5 right-1.5 z-10 justify-center items-center rounded-full transition-colors group-hover:flex bg-gray-5 hover:bg-gray-6 text-gray-11 hover:text-gray-12 size-5"
+								class="hidden absolute top-1.5 right-1.5 z-10 justify-center items-center rounded-sm transition-colors group-hover:flex bg-gray-5 hover:bg-gray-6 text-gray-11 hover:text-gray-12 size-5"
 								aria-label="Remove from selection"
 								onClick={() => removeFromSelection(item().index)}
 							>
@@ -4835,7 +4836,7 @@ function SyncOffsetsConfig() {
 							</Show>
 							<Show when={clipConfig(index())?.offsetsAutoCalculated === true}>
 								<p class="text-[11px] text-ed-text-3">
-									Cap calculated these offsets automatically to keep audio in
+									capt calculated these offsets automatically to keep audio in
 									sync with the video. Adjust them if anything still sounds off.
 								</p>
 							</Show>
@@ -4985,13 +4986,13 @@ function PositionPad(props: {
 			<div class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-gray-3 pointer-events-none" />
 			<div class="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gray-3 pointer-events-none" />
 			<div
-				class="flex absolute z-10 justify-center items-center w-6 h-6 rounded-full border border-gray-400 -translate-x-1/2 -translate-y-1/2 bg-gray-1 pointer-events-none"
+				class="flex absolute z-10 justify-center items-center w-6 h-6 rounded-sm border border-gray-400 -translate-x-1/2 -translate-y-1/2 bg-gray-1 pointer-events-none"
 				style={{
 					left: `${props.value().x * 100}%`,
 					top: `${props.value().y * 100}%`,
 				}}
 			>
-				<div class="rounded-full size-1.5 bg-gray-5" />
+				<div class="rounded-[1px] size-1.5 bg-gray-5" />
 			</div>
 		</div>
 	);

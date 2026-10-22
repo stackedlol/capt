@@ -77,7 +77,7 @@ export function AnnotationPopover() {
 												{(color) => (
 													<button
 														type="button"
-														class="size-5 rounded-full border border-gray-4 hover:scale-110 transition-transform"
+														class="size-5 rounded-sm border border-gray-4 hover:scale-110 transition-transform"
 														style={{ background: color }}
 														onClick={() => updateSelected("strokeColor", color)}
 													/>
@@ -132,7 +132,7 @@ export function AnnotationPopover() {
 															{(color) => (
 																<button
 																	type="button"
-																	class="size-5 rounded-full border border-gray-4 hover:scale-110 transition-transform"
+																	class="size-5 rounded-sm border border-gray-4 hover:scale-110 transition-transform"
 																	style={{ background: color }}
 																	onClick={() =>
 																		updateSelected("fillColor", color)

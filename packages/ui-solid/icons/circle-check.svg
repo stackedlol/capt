@@ -1,3 +1,11 @@
-<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M12.5 7.91667L8.75 12.5L7.08333 10.8333M17.5 10C17.5 14.1421 14.1421 17.5 10 17.5C5.85786 17.5 2.5 14.1421 2.5 10C2.5 5.85786 5.85786 2.5 10 2.5C14.1421 2.5 17.5 5.85786 17.5 10Z" stroke="currentColor" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none">
+	<path d="M9,1.75c4.004,0,7.25,3.246,7.25,7.25s-3.246,7.25-7.25,7.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/>
+	<polyline points="5.75 9.25 8 11.75 12.25 6.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/>
+	<circle cx="3.873" cy="14.127" r=".75" fill="currentColor"/>
+	<circle cx="1.75" cy="9" r=".75" fill="currentColor"/>
+	<circle cx="3.873" cy="3.873" r=".75" fill="currentColor"/>
+	<circle cx="6.226" cy="15.698" r=".75" fill="currentColor"/>
+	<circle cx="2.302" cy="11.774" r=".75" fill="currentColor"/>
+	<circle cx="2.302" cy="6.226" r=".75" fill="currentColor"/>
+	<circle cx="6.226" cy="2.302" r=".75" fill="currentColor"/>
 </svg>

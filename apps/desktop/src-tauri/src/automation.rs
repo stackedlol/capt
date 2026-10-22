@@ -74,7 +74,6 @@ impl AutomationHost for DesktopAutomationHost {
             Capability::CopyToClipboard,
             Capability::SaveToLocation,
             Capability::Export,
-            Capability::Upload,
             Capability::RevealInFileManager,
             Capability::OpenFile,
             Capability::RunCommand,
@@ -214,81 +213,12 @@ impl AutomationHost for DesktopAutomationHost {
 
     async fn upload(
         &self,
-        ctx: &TriggerContext,
-        organization_id: Option<&str>,
-        copy_link: bool,
-        open_in_browser: bool,
+        _ctx: &TriggerContext,
+        _organization_id: Option<&str>,
+        _copy_link: bool,
+        _open_in_browser: bool,
     ) -> Result<(), String> {
-        let link = if let Some(image_path) = ctx.image_path.as_ref() {
-            info!(path = %image_path.display(), "Automation: uploading screenshot");
-            let meta = ctx
-                .project_path
-                .as_ref()
-                .or(Some(image_path))
-                .and_then(|path| crate::load_screenshot_project_meta(path).ok());
-            let existing_video_id = meta
-                .as_ref()
-                .and_then(|(_, meta)| meta.sharing.as_ref().map(|sharing| sharing.id.clone()));
-            let uploaded = crate::upload::upload_screenshot_file(
-                &self.app,
-                image_path.clone(),
-                existing_video_id,
-                organization_id.map(str::to_string),
-            )
-            .await
-            .map_err(|e| format!("Upload failed: {e}"))?;
-
-            if let Some((project_path, meta)) = meta {
-                let _ = crate::save_screenshot_sharing(&project_path, meta, &uploaded, None);
-            }
-
-            uploaded.link
-        } else if let Some(existing) = ctx.share_link.as_ref() {
-            info!(link = %existing, "Automation: recording already uploaded, reusing existing link");
-            existing.clone()
-        } else if let Some(project_path) = ctx.project_path.as_ref() {
-            info!(path = %project_path.display(), "Automation: uploading recording");
-            let channel = tauri::ipc::Channel::new(|_| Ok(()));
-            let result = crate::upload_exported_video(
-                self.app.clone(),
-                project_path.clone(),
-                crate::UploadMode::Initial {
-                    pre_created_video: None,
-                },
-                channel,
-                organization_id.map(|s| s.to_string()),
-            )
-            .await?;
-
-            match result {
-                crate::UploadResult::Success(link) => link,
-                crate::UploadResult::NotAuthenticated => {
-                    return Err("Not authenticated for upload".to_string());
-                }
-                crate::UploadResult::UpgradeRequired => {
-                    return Err("Upgrade required for upload".to_string());
-                }
-                crate::UploadResult::PlanCheckFailed => {
-                    return Err("Plan check failed for upload".to_string());
-                }
-            }
-        } else {
-            return Err("No image or project path available for upload".to_string());
-        };
-
-        if copy_link {
-            self.clipboard
-                .write()
-                .await
-                .set_text(link.clone())
-                .map_err(|e| format!("Failed to copy link: {e}"))?;
-        }
-
-        if open_in_browser {
-            let _ = crate::open_external_link(self.app.clone(), link.clone());
-        }
-
-        Ok(())
+        Err("Uploading is not available in Capt".to_string())
     }
 
     async fn reveal_in_file_manager(&self, ctx: &TriggerContext) -> Result<(), String> {
@@ -960,7 +890,6 @@ pub async fn list_automation_capabilities() -> Vec<String> {
         "CopyToClipboard".to_string(),
         "SaveToLocation".to_string(),
         "Export".to_string(),
-        "Upload".to_string(),
         "RevealInFileManager".to_string(),
         "OpenFile".to_string(),
         "RunCommand".to_string(),

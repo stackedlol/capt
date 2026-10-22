@@ -38,18 +38,17 @@ export default function Tooltip(props: Props) {
 				{props.children}
 			</KTooltip.Trigger>
 			<KTooltip.Portal>
-				<KTooltip.Content class="z-50 px-1.5 flex items-center py-1 text-xs border border-gray-3 bg-gray-12 text-gray-1 rounded-md shadow-lg duration-100 animate-in fade-in slide-in-from-top-1 min-w-6 gap-1.5 text-center">
+				<KTooltip.Content class="z-50 flex items-center gap-1.5 rounded-md bg-gray-12 px-2 py-1 text-center text-[11px] font-medium text-gray-1 shadow-[0_2px_8px_rgba(0,0,0,0.18)] duration-100 animate-in fade-in slide-in-from-top-1">
 					<span>{props.content}</span>
 					{props.kbd && props.kbd.length > 0 && (
 						<div class="space-x-1">
 							{props.kbd?.map((kbd) => (
-								<kbd class="py-0.5 px-[5px] text-[10px] rounded-md text-gray-12 bg-gray-1">
+								<kbd class="rounded-sm bg-gray-1/15 px-1 py-px font-sans text-[10px] text-gray-1">
 									{kbdSymbolModifier(kbd, os)}
 								</kbd>
 							))}
 						</div>
 					)}
-					<KTooltip.Arrow size={16} />
 				</KTooltip.Content>
 			</KTooltip.Portal>
 		</KTooltip>

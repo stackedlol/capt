@@ -27,7 +27,7 @@ const ModeOption = (props: ModeOptionProps) => {
 			aria-pressed={props.isSelected}
 		>
 			<Show when={props.isSelected}>
-				<div class="absolute top-2.5 right-2.5 flex items-center justify-center size-5 rounded-full bg-blue-9">
+				<div class="absolute top-2.5 right-2.5 flex items-center justify-center size-5 rounded-sm bg-blue-9">
 					<IconLucideCheck class="size-3 text-white" />
 				</div>
 			</Show>
@@ -96,7 +96,7 @@ const ModeSelect = (props: { onClose?: () => void; standalone?: boolean }) => {
 			<Show when={props.onClose}>
 				<div
 					onClick={() => props.onClose?.()}
-					class="absolute -top-2.5 -right-2.5 p-2 rounded-full border duration-200 bg-gray-2 border-gray-3 hover:bg-gray-3 transition-colors"
+					class="absolute -top-2.5 -right-2.5 p-2 rounded-sm border duration-200 bg-gray-2 border-gray-3 hover:bg-gray-3 transition-colors"
 				>
 					<IconCapX class="invert-1 size-2 dark:invert" />
 				</div>

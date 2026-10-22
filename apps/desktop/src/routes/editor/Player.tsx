@@ -467,7 +467,7 @@ export function PlayerContent(props: { compactness?: number }) {
 						<button
 							type="button"
 							onClick={handlePlayPauseClick}
-							class="flex justify-center items-center rounded-full transition-opacity size-8 bg-ed-text-1 text-ed-card hover:opacity-90"
+							class="flex justify-center items-center rounded-sm transition-opacity size-8 bg-ed-text-1 text-ed-card hover:opacity-90"
 						>
 							{!playbackIntent() || isAtEnd() ? (
 								<IconCapPlay class="size-3" />

@@ -59,7 +59,7 @@ function ToolButton(props: {
 			disabled={props.disabled}
 			onClick={props.onClick}
 			class={cx(
-				"flex size-7 items-center justify-center rounded-full text-gray-9 transition hover:bg-gray-12/7 hover:text-gray-12 disabled:cursor-not-allowed disabled:opacity-30",
+				"flex size-7 items-center justify-center rounded-sm text-gray-9 transition hover:bg-gray-12/7 hover:text-gray-12 disabled:cursor-not-allowed disabled:opacity-30",
 				props.active && "bg-gray-12/8 text-gray-12",
 			)}
 		>
@@ -242,6 +242,28 @@ export default function Teleprompter() {
 			resizeObserver = new ResizeObserver(resizeEditor);
 			resizeObserver.observe(scrollElement);
 		}
+
+		void teleprompterStore
+			.listen((saved) => {
+				if (!saved || !isLoaded()) return;
+				const current = state();
+				if (
+					saved.mirror === current.mirror &&
+					saved.showCueMarkers === current.showCueMarkers &&
+					saved.wordsPerMinute === current.wordsPerMinute
+				)
+					return;
+				setState({
+					...current,
+					mirror: saved.mirror,
+					showCueMarkers: saved.showCueMarkers,
+					wordsPerMinute: saved.wordsPerMinute,
+				});
+			})
+			.then((unlisten) => {
+				if (disposed) unlisten();
+				else recordingUnlisteners.push(unlisten);
+			});
 	});
 
 	onMount(() => {
@@ -431,7 +453,7 @@ export default function Teleprompter() {
 								? "Scrolling paused with recording"
 								: isLinux
 									? "This window may appear in recordings on Linux"
-									: "This window is hidden from Cap recordings")}
+									: "This window is hidden from capt recordings")}
 					</span>
 				</div>
 				<Show when={isWindows}>
@@ -523,7 +545,7 @@ export default function Teleprompter() {
 					aria-pressed={playback().requested}
 					disabled={!hasScript() || pauseStateError() !== null}
 					onClick={togglePlayback}
-					class="flex size-8 items-center justify-center rounded-full border border-gray-12/6 bg-gray-12/7 text-gray-12 shadow-sm backdrop-blur-xl transition hover:bg-gray-12/11 disabled:cursor-not-allowed disabled:opacity-30"
+					class="flex size-8 items-center justify-center rounded-sm border border-gray-12/6 bg-gray-12/7 text-gray-12 shadow-sm backdrop-blur-xl transition hover:bg-gray-12/11 disabled:cursor-not-allowed disabled:opacity-30"
 				>
 					<Show
 						when={playback().requested}
@@ -534,7 +556,7 @@ export default function Teleprompter() {
 				</button>
 				<div
 					title={`Scroll speed: ${state().wordsPerMinute} wpm`}
-					class="ml-1.5 flex h-8 items-center gap-1.5 rounded-full border border-gray-12/6 bg-gray-12/5 px-2 backdrop-blur-xl"
+					class="ml-1.5 flex h-8 items-center gap-1.5 rounded-sm border border-gray-12/6 bg-gray-12/5 px-2 backdrop-blur-xl"
 				>
 					<IconLucideGauge class="size-3.5 shrink-0 text-gray-9" />
 					<input
@@ -549,7 +571,7 @@ export default function Teleprompter() {
 								wordsPerMinute: Number(event.currentTarget.value),
 							}))
 						}
-						class="h-1 w-12 cursor-pointer appearance-none rounded-full bg-gray-12/10 [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-9 [&::-webkit-slider-thumb]:shadow-sm"
+						class="h-1 w-12 cursor-pointer appearance-none rounded-[1px] bg-gray-12/10 [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-[1px] [&::-webkit-slider-thumb]:bg-blue-9 [&::-webkit-slider-thumb]:shadow-sm"
 						aria-label="Scroll speed"
 					/>
 					<span class="w-12 text-right text-[10px] tabular-nums text-gray-9">
@@ -560,7 +582,7 @@ export default function Teleprompter() {
 				<div class="ml-auto flex items-center gap-1.5">
 					<div
 						title={`Window opacity: ${state().windowOpacityPercent}%`}
-						class="flex h-8 items-center gap-1.5 rounded-full border border-gray-12/6 bg-gray-12/5 px-2 backdrop-blur-xl"
+						class="flex h-8 items-center gap-1.5 rounded-sm border border-gray-12/6 bg-gray-12/5 px-2 backdrop-blur-xl"
 					>
 						<IconLucideLayers class="size-3.5 shrink-0 text-gray-9" />
 						<input
@@ -575,11 +597,11 @@ export default function Teleprompter() {
 									windowOpacityPercent: Number(event.currentTarget.value),
 								}))
 							}
-							class="h-1 w-12 cursor-pointer appearance-none rounded-full bg-gray-12/10 [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-gray-11 [&::-webkit-slider-thumb]:shadow-sm"
+							class="h-1 w-12 cursor-pointer appearance-none rounded-[1px] bg-gray-12/10 [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-[1px] [&::-webkit-slider-thumb]:bg-gray-11 [&::-webkit-slider-thumb]:shadow-sm"
 							aria-label="Window opacity"
 						/>
 					</div>
-					<div class="flex h-8 items-center rounded-full border border-gray-12/6 bg-gray-12/5 px-0.5 backdrop-blur-xl">
+					<div class="flex h-8 items-center rounded-sm border border-gray-12/6 bg-gray-12/5 px-0.5 backdrop-blur-xl">
 						<ToolButton label="Smaller text" onClick={() => changeFontSize(-2)}>
 							<IconLucideMinus class="size-3.5" />
 						</ToolButton>

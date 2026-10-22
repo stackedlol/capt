@@ -1,4 +1,3 @@
-use crate::updates::UpdateChannel;
 use crate::window_exclusion::WindowExclusion;
 use scap_targets::DisplayId;
 use serde::{Deserialize, Serialize};
@@ -104,18 +103,18 @@ impl MainWindowRecordingStartBehaviour {
     }
 }
 
-// NOTE: Do not add "Cap Target Select" here — on Windows, WDA_EXCLUDEFROMCAPTURE applied to that
+// NOTE: Do not add "Capt Target Select" here — on Windows, WDA_EXCLUDEFROMCAPTURE applied to that
 // hidden window causes it to reappear as a ghost overlay after recording ends.
 const DEFAULT_EXCLUDED_WINDOW_TITLES: &[&str] = &[
-    "Cap",
-    "Cap Settings",
-    "Cap Recording Controls",
-    "Cap Camera",
-    "Cap Window Capture Occluder",
-    "Cap Capture Area",
-    "Cap Mode Selection",
-    "Cap Recordings Overlay",
-    "Cap Teleprompter",
+    "Capt",
+    "Capt Settings",
+    "Capt Recording Controls",
+    "Capt Camera",
+    "Capt Window Capture Occluder",
+    "Capt Capture Area",
+    "Capt Mode Selection",
+    "Capt Recordings Overlay",
+    "Capt Teleprompter",
 ];
 
 pub fn default_excluded_windows() -> Vec<WindowExclusion> {
@@ -160,11 +159,7 @@ pub struct GeneralSettingsStore {
     #[serde(default = "uuid::Uuid::new_v4")]
     pub instance_id: Uuid,
     #[serde(default)]
-    pub upload_individual_files: bool,
-    #[serde(default)]
     pub hide_dock_icon: bool,
-    #[serde(default)]
-    pub auto_create_shareable_link: bool,
     #[serde(default = "default_true")]
     pub enable_notifications: bool,
     #[serde(default)]
@@ -173,10 +168,6 @@ pub struct GeneralSettingsStore {
     pub has_completed_startup: bool,
     #[serde(default)]
     pub theme: AppTheme,
-    #[serde(default)]
-    pub commercial_license: Option<CommercialLicense>,
-    #[serde(default)]
-    pub last_version: Option<String>,
     #[serde(default)]
     pub window_transparency: bool,
     #[serde(default)]
@@ -188,8 +179,6 @@ pub struct GeneralSettingsStore {
         rename = "custom_cursor_capture2"
     )]
     pub custom_cursor_capture: bool,
-    #[serde(default = "default_server_url")]
-    pub server_url: String,
     #[serde(default)]
     pub recording_countdown: Option<u32>,
     #[serde(
@@ -252,13 +241,6 @@ pub struct GeneralSettingsStore {
     /// update, since a new ort/wgpu/driver stack may have fixed the crash).
     #[serde(default)]
     pub camera_blur_disabled_by_crash: Option<String>,
-    #[serde(default)]
-    pub update_channel: UpdateChannel,
-    /// Run the experimental gpui-native app (`cap-gpui`) *instead of* this one:
-    /// while enabled, startup hands off to it and exits, and the native app's
-    /// own Experimental page hands back. See `gpui_app.rs`.
-    #[serde(default)]
-    pub enable_gpui_app: bool,
 }
 
 fn default_enable_native_camera_preview() -> bool {
@@ -295,46 +277,27 @@ fn default_crash_recovery_recording() -> bool {
 
 fn default_transcription_hints() -> Vec<String> {
     vec![
-        "Cap".to_string(),
+        "Capt".to_string(),
         "TypeScript".to_string(),
         "My Brand Name".to_string(),
         "mywebsite.com".to_string(),
     ]
 }
 
-fn default_server_url() -> String {
-    std::option_env!("VITE_SERVER_URL")
-        .unwrap_or("https://cap.so")
-        .to_string()
-}
-
-#[derive(Serialize, Deserialize, Type, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CommercialLicense {
-    license_key: String,
-    expiry_date: Option<f64>,
-    refresh: f64,
-    activated_on: f64,
-}
-
 impl Default for GeneralSettingsStore {
     fn default() -> Self {
         Self {
             instance_id: uuid::Uuid::new_v4(),
-            upload_individual_files: false,
             hide_dock_icon: false,
-            auto_create_shareable_link: false,
             enable_notifications: true,
             disable_auto_open_links: false,
             has_completed_startup: false,
+            enable_telemetry: false,
             theme: AppTheme::System,
-            commercial_license: None,
-            last_version: None,
             window_transparency: false,
             post_studio_recording_behaviour: PostStudioRecordingBehaviour::OpenEditor,
             main_window_recording_start_behaviour: MainWindowRecordingStartBehaviour::Close,
             custom_cursor_capture: cap_recording::DEFAULT_CUSTOM_CURSOR_CAPTURE,
-            server_url: default_server_url(),
             recording_countdown: Some(3),
             enable_native_camera_preview: default_enable_native_camera_preview(),
             // Keep aligned with the field's serde `default_true`: auto zooms
@@ -357,13 +320,10 @@ impl Default for GeneralSettingsStore {
             camera_window_position: None,
             camera_window_positions_by_monitor_name: BTreeMap::new(),
             has_completed_onboarding: false,
-            enable_telemetry: true,
             out_of_process_muxer: cap_recording::DEFAULT_OUT_OF_PROCESS_MUXER,
             recordings_path: None,
             previous_recordings_paths: Vec::new(),
             camera_blur_disabled_by_crash: None,
-            update_channel: UpdateChannel::Stable,
-            enable_gpui_app: false,
         }
     }
 }
@@ -615,8 +575,6 @@ impl GeneralSettingsStore {
         update(&mut settings);
         persist_general_settings(app, &store, &snapshot, &settings)?;
 
-        crate::telemetry::set_telemetry_enabled(settings.enable_telemetry);
-
         #[cfg(target_os = "macos")]
         crate::permissions::sync_macos_dock_visibility(app);
 
@@ -686,7 +644,6 @@ pub fn init(app: &AppHandle) {
         raw_store.set(REMOVE_TARGET_SELECT_MIGRATION_KEY, json!(true));
     }
 
-    crate::telemetry::set_telemetry_enabled(store.enable_telemetry);
     register_bundled_muxer_binary(app);
 
     #[cfg(target_os = "macos")]
@@ -828,7 +785,6 @@ mod tests {
         let mut updated = snapshot.settings.clone();
         updated.hide_dock_icon = true;
         updated.main_window_position.as_mut().unwrap().x = 90.0;
-        updated.commercial_license.as_mut().unwrap().refresh = 456.0;
         append_missing_default_excluded_windows(&mut updated.excluded_windows);
         snapshot
             .persist(
@@ -838,11 +794,7 @@ mod tests {
                     assert_eq!(saved["hideDockIcon"], true);
                     assert_eq!(saved["mainWindowPosition"]["x"], 90.0);
                     assert_eq!(saved["mainWindowPosition"]["futurePositionField"], true);
-                    assert_eq!(saved["commercialLicense"]["refresh"], 456.0);
-                    assert_eq!(
-                        saved["commercialLicense"]["futureLicenseField"],
-                        original["commercialLicense"]["futureLicenseField"]
-                    );
+                    assert_eq!(saved["commercialLicense"], original["commercialLicense"]);
                     assert_eq!(saved["futureSetting"], original["futureSetting"]);
                     assert_eq!(saved["excludedWindows"][0], original["excludedWindows"][0]);
                     Ok(())

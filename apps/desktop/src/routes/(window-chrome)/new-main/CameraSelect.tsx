@@ -1,5 +1,5 @@
 import { createTimer } from "@solid-primitives/timer";
-import { CheckMenuItem, Menu, PredefinedMenuItem } from "@tauri-apps/api/menu";
+import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import { cx } from "cva";
 import {
 	type Component,
@@ -8,7 +8,6 @@ import {
 	createSignal,
 	Show,
 } from "solid-js";
-import { trackEvent } from "~/utils/analytics";
 import { createCurrentRecordingQuery } from "~/utils/queries";
 import {
 	type CameraInfo,
@@ -26,8 +25,6 @@ import {
 import InfoPill from "./InfoPill";
 import TargetSelectInfoPill from "./TargetSelectInfoPill";
 import useRequestPermission from "./useRequestPermission";
-
-const NO_CAMERA = "No Camera";
 
 export default function CameraSelect(props: {
 	disabled?: boolean;
@@ -101,7 +98,7 @@ export default function CameraSelect(props: {
 	const label = () =>
 		props.value?.display_name ??
 		(hasSelection() ? props.selectedLabel : null) ??
-		(hasSelection() ? "Camera" : NO_CAMERA);
+		"Camera";
 
 	const showHiddenIndicator = () =>
 		props.value !== null &&
@@ -261,11 +258,6 @@ export function CameraSelectBase(props: {
 			return requestPermission("camera", props.permissions?.camera);
 
 		props.onChange(cameraLabel);
-
-		trackEvent("camera_selected", {
-			camera_name: cameraLabel?.display_name ?? null,
-			enabled: !!cameraLabel,
-		});
 	};
 
 	const showHiddenIndicator = () =>
@@ -286,12 +278,6 @@ export function CameraSelectBase(props: {
 					}
 
 					Promise.all([
-						CheckMenuItem.new({
-							text: NO_CAMERA,
-							checked: props.value === null,
-							action: () => onChange(null),
-						}),
-						PredefinedMenuItem.new({ item: "Separator" }),
 						...props.options.map((o) =>
 							CheckMenuItem.new({
 								text: o.display_name,
@@ -309,7 +295,7 @@ export function CameraSelectBase(props: {
 			>
 				<IconCapCamera class={props.iconClass} />
 				<p class="flex-1 text-sm text-left truncate">
-					{props.value?.display_name ?? NO_CAMERA}
+					{props.value?.display_name ?? "Camera"}
 				</p>
 				<div class="flex items-center gap-1">
 					{showHiddenIndicator() && (
@@ -317,7 +303,7 @@ export function CameraSelectBase(props: {
 							type="button"
 							onClick={openCameraWindow}
 							onPointerDown={(e) => e.stopPropagation()}
-							class="flex items-center justify-center px-2 py-1 rounded-full bg-gray-6 text-gray-11 hover:bg-gray-7 transition-colors"
+							class="flex items-center justify-center px-2 py-1 rounded-sm bg-gray-6 text-gray-11 hover:bg-gray-7 transition-colors"
 							title="Show camera preview"
 						>
 							<IconLucideEyeOff class="size-3.5" />

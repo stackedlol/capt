@@ -995,7 +995,7 @@ function Inner(props: {
 									aria-orientation="vertical"
 								>
 									<div
-										class="w-1 h-10 rounded-full transition-colors bg-ed-line-strong group-hover:bg-ed-text-3"
+										class="w-1 h-10 rounded-[1px] transition-colors bg-ed-line-strong group-hover:bg-ed-text-3"
 										classList={{
 											"bg-ed-text-3": isResizingSplit(),
 										}}
@@ -1028,7 +1028,7 @@ function Inner(props: {
 								onMouseDown={handleTimelineResizeStart}
 							>
 								<div
-									class="absolute left-1/2 top-[5px] w-9 h-1 rounded-full transition-colors -translate-x-1/2 bg-ed-line-strong group-hover:bg-ed-text-3"
+									class="absolute left-1/2 top-[5px] w-9 h-1 rounded-[1px] transition-colors -translate-x-1/2 bg-ed-line-strong group-hover:bg-ed-text-3"
 									classList={{
 										"bg-ed-text-3": isResizingTimeline(),
 									}}
@@ -1627,7 +1627,7 @@ function Dialogs() {
 												</div>
 												<Show when={!frameLoaded()}>
 													<div class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 rounded-xl bg-ed-stage">
-														<div class="size-6 animate-spin rounded-full border-2 border-ed-line-strong border-t-ed-accent" />
+														<div class="size-6 animate-spin rounded-sm border-2 border-ed-line-strong border-t-ed-accent" />
 														<span class="text-xs font-medium text-ed-text-2">
 															Loading frame…
 														</span>
@@ -1644,7 +1644,7 @@ function Dialogs() {
 													/>
 													<Show when={!previewReady()}>
 														<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ed-stage">
-															<div class="size-5 animate-spin rounded-full border-2 border-ed-line-strong border-t-ed-accent" />
+															<div class="size-5 animate-spin rounded-sm border-2 border-ed-line-strong border-t-ed-accent" />
 															<span class="text-[11px] font-medium text-ed-text-3">
 																Rendering preview…
 															</span>
@@ -1780,10 +1780,8 @@ function Dialogs() {
 													type="button"
 													class={cx(
 														"flex h-[30px] shrink-0 items-center justify-center rounded-lg px-3.5 text-[13px] font-medium text-white outline-hidden",
-														"bg-linear-to-b from-ed-accent-2 to-ed-accent",
-														"shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_1px_2px_rgba(0,60,160,0.25)]",
-														"transition-[filter,opacity] duration-150 ease-out",
-														"enabled:hover:brightness-[1.06] enabled:active:brightness-[0.96] disabled:opacity-45",
+														"bg-ed-accent transition-[background-color,opacity] duration-150 ease-out",
+														"enabled:hover:bg-ed-accent-2 enabled:active:bg-ed-accent disabled:opacity-45",
 													)}
 													disabled={
 														!frameLoaded() ||

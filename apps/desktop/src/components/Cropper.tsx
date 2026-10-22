@@ -1159,7 +1159,7 @@ export function Cropper(
 				<Show when={props.showBounds && labelTransform()}>
 					{(transform) => (
 						<div
-							class="fixed z-50 pointer-events-none bg-gray-2 text-xs px-2 py-0.5 rounded-full shadow-lg border border-gray-5 font-mono scale-50"
+							class="fixed z-50 pointer-events-none bg-gray-2 text-xs px-2 py-0.5 rounded-sm shadow-lg border border-gray-5 font-mono scale-50"
 							style={{
 								transform: `translate(${transform().x}px, ${transform().y}px)`,
 							}}
@@ -1389,7 +1389,7 @@ export function Cropper(
 								aria-live="polite"
 							>
 								<div
-									class="h-[18px] w-11 rounded-full text-center text-xs text-gray-12 border border-white/70 dark:border-white/20 drop-shadow-md outline-1 outline-solid outline-black/80"
+									class="h-[18px] w-11 rounded-sm text-center text-xs text-gray-12 border border-white/70 dark:border-white/20 drop-shadow-md outline-1 outline-solid outline-black/80"
 									classList={{
 										"backdrop-blur-xs bg-white/50 dark:bg-black/50 dark:backdrop-brightness-90 backdrop-brightness-200":
 											props.useBackdropFilter,

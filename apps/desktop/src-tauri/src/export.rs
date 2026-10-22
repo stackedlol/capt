@@ -48,10 +48,6 @@ fn export_panic_error(panic: Box<dyn Any + Send>) -> String {
         panic = %panic_msg,
         "export command panicked"
     );
-    sentry::capture_message(
-        &format!("Export command panicked: {panic_msg}"),
-        sentry::Level::Error,
-    );
     "Export failed unexpectedly".to_string()
 }
 
@@ -127,10 +123,6 @@ async fn run_protected_export(
                 target: "cap_desktop_export",
                 panic = %panic_msg,
                 "export task panicked"
-            );
-            sentry::capture_message(
-                &format!("Export task panicked: {panic_msg}"),
-                sentry::Level::Error,
             );
             Err("Export failed unexpectedly".to_string())
         }
@@ -1493,7 +1485,6 @@ async fn export_video_attempts(
                         return Err("Export cancelled".to_string());
                     }
 
-                    sentry::capture_message(&retry_e, sentry::Level::Error);
                     Err(retry_e)
                 }
             }
@@ -1501,10 +1492,7 @@ async fn export_video_attempts(
         Err(e) if cancel_token.is_cancelled() || e == "Export cancelled" => {
             Err("Export cancelled".to_string())
         }
-        Err(e) => {
-            sentry::capture_message(&e, sentry::Level::Error);
-            Err(e)
-        }
+        Err(e) => Err(e),
     }
 }
 
@@ -1906,10 +1894,6 @@ pub async fn generate_export_preview(
                 target: "cap_desktop_export",
                 panic = %panic_msg,
                 "generate_export_preview panicked"
-            );
-            sentry::capture_message(
-                &format!("Export preview panicked: {panic_msg}"),
-                sentry::Level::Error,
             );
             Err("Export preview failed unexpectedly".to_string())
         }
@@ -2470,10 +2454,6 @@ pub async fn generate_export_preview_fast(
                 target: "cap_desktop_export",
                 panic = %panic_msg,
                 "generate_export_preview_fast panicked"
-            );
-            sentry::capture_message(
-                &format!("Export preview panicked: {panic_msg}"),
-                sentry::Level::Error,
             );
             Err("Export preview failed unexpectedly".to_string())
         }

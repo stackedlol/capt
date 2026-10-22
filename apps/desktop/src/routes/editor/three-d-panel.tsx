@@ -417,7 +417,7 @@ function OrbitPad(props: {
 			/>
 			<PoseCard pose={props.pose} height={ORBIT_PAD_SIZE} widthPercent={62} />
 			<div
-				class="absolute rounded-full pointer-events-none size-3 -translate-x-1/2 -translate-y-1/2 bg-ed-accent shadow-[0_0_0_3px_var(--ed-card)]"
+				class="absolute rounded-sm pointer-events-none size-3 -translate-x-1/2 -translate-y-1/2 bg-ed-accent shadow-[0_0_0_3px_var(--ed-card)]"
 				style={{ left: `${x() * 100}%`, top: `${y() * 100}%` }}
 			/>
 			<span class="absolute inset-x-0 bottom-1.5 text-[10px] text-center pointer-events-none text-ed-text-2">
@@ -707,7 +707,7 @@ export function Camera3DShotPanel(props: {
 					{poseCaption(end)}
 				</span>
 				<Show when={playheadOnPose(end)}>
-					<span class="rounded-full shrink-0 size-1.5 bg-ed-accent" />
+					<span class="rounded-[1px] shrink-0 size-1.5 bg-ed-accent" />
 				</Show>
 			</span>
 		</button>

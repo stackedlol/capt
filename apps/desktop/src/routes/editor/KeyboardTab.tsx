@@ -170,7 +170,7 @@ export function KeyboardTab(props: {
 		<div class="flex flex-col gap-3.5">
 			<div class="flex flex-row gap-2 items-center min-h-[22px]">
 				<SectionLabel name="Show keyboard" />
-				<span class="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-ed-ctl text-ed-text-2">
+				<span class="px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-ed-ctl text-ed-text-2">
 					Beta
 				</span>
 				<div class="ml-auto">

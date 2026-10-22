@@ -27,7 +27,7 @@ export function BrandColorsDropdown(props: {
 						<For each={props.swatches.slice(0, 4)}>
 							{(swatch) => (
 								<span
-									class="size-4 rounded-full border border-ed-card"
+									class="size-4 rounded-sm border border-ed-card"
 									style={{
 										"background-color": swatch.color,
 										"box-shadow": `inset 0 0 0 1px ${getColorPreviewBorderColor(

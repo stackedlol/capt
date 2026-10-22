@@ -7,10 +7,7 @@ import * as path from "node:path";
 import { env } from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import {
-	createLinuxBundleConfig,
-	GPUI_RPM_DEPENDS,
-} from "./linux-bundle-config.mjs";
+import { createLinuxBundleConfig } from "./linux-bundle-config.mjs";
 
 const exec = promisify(execCb);
 const execFile = promisify(execFileCb);
@@ -757,27 +754,6 @@ async function writeLinuxTauriConfig(sonameLibs) {
 		)}\n`,
 	);
 
-	const gpuiDirectory = path.join(__root, "apps", "desktop-gpui");
-	const gpuiConfig = JSON.parse(
-		await fs.readFile(path.join(gpuiDirectory, "tauri.conf.json"), "utf8"),
-	);
-	await writeFileIfChanged(
-		path.join(gpuiDirectory, "tauri.linux.conf.json"),
-		`${JSON.stringify(
-			createLinuxBundleConfig(
-				sonameLibs,
-				{},
-				gpuiConfig.bundle.linux.deb.depends,
-				{
-					root: "../..",
-					rpmDependencies: GPUI_RPM_DEPENDS,
-					mediaFramework: false,
-				},
-			),
-			null,
-			"\t",
-		)}\n`,
-	);
 	console.log(
 		`Generated Linux Tauri package configs with ${sonameLibs.length} shared libraries`,
 	);

@@ -14,13 +14,10 @@ import toast from "solid-toast";
 import Tooltip from "~/components/Tooltip";
 import CaptionControlsMacOS from "~/components/titlebar/controls/CaptionControlsMacOS";
 import CaptionControlsWindows11 from "~/components/titlebar/controls/CaptionControlsWindows11";
-import { trackEvent } from "~/utils/analytics";
 import { commands } from "~/utils/tauri";
 import { useEditorContext } from "./context";
-import OrganizationDropdown from "./OrganizationDropdown";
 import PresetsDropdown from "./PresetsDropdown";
 import { createRecordingTitleSave } from "./recording-title-save";
-import ShareButton from "./ShareButton";
 import { EditorButton } from "./ui";
 
 export type ResolutionOption = {
@@ -182,7 +179,6 @@ export function Header(props: {
 					leftIcon={<IconCapRedo />}
 				/>
 				<div class="mx-1.5 w-px h-4 shrink-0 bg-ed-line-strong" />
-				<OrganizationDropdown />
 				<PresetsDropdown />
 				<EditorButton
 					title="Clips"
@@ -224,20 +220,16 @@ export function Header(props: {
 						</span>
 					</EditorButton>
 				</Show>
-				<ShareButton />
 				<button
 					type="button"
 					class={cx(
 						"flex shrink-0 gap-[7px] justify-center items-center pl-3 pr-3.5 ml-1.5 h-[30px] text-[13px] font-medium text-white rounded-lg outline-hidden",
-						"bg-linear-to-b from-ed-accent-2 to-ed-accent",
-						"shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_1px_2px_rgba(0,60,160,0.25)]",
-						"transition-[filter] duration-150 ease-out",
-						"hover:brightness-[1.06] active:brightness-[0.96]",
+						"bg-ed-accent transition-[background-color] duration-150 ease-out",
+						"hover:bg-ed-accent-2 active:bg-ed-accent",
 					)}
 					onClick={() => {
 						clearTimelineSelection();
 
-						trackEvent("export_button_clicked");
 						if (exportState.type === "done") setExportState({ type: "idle" });
 
 						setDialog({ type: "export", open: true });

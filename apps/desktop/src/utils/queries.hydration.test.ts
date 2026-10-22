@@ -31,8 +31,6 @@ vi.mock("~/routes/(window-chrome)/OptionsContext", () => ({
 	useRecordingOptions: vi.fn(),
 }));
 vi.mock("~/store", () => ({
-	authStore: {},
-	generalSettingsStore: {},
 	recordingSettingsStore: {
 		get: fixture.getSettings,
 		set: fixture.setSettings,
@@ -41,10 +39,6 @@ vi.mock("~/store", () => ({
 }));
 vi.mock("./events", () => ({ createQueryInvalidate: vi.fn() }));
 vi.mock("./tauri", () => ({ commands: {} }));
-vi.mock("./web-api", () => ({
-	orgCustomDomainClient: {},
-	protectedHeaders: vi.fn(),
-}));
 
 import { createOptionsQuery } from "./queries";
 
@@ -108,7 +102,7 @@ describe("camera preference hydration with Solid persistence", () => {
 		await options.hydrate(saved);
 		expect(options.rawOptions.cameraID).toEqual(saved);
 		expect(Object.keys(options.rawOptions.cameraID ?? {})).toHaveLength(1);
-		expect(options.rawOptions.micName).toBe("Saved microphone");
+		expect(options.rawOptions.micName).toBeNull();
 	});
 
 	it.each([
@@ -126,7 +120,7 @@ describe("camera preference hydration with Solid persistence", () => {
 			const options = loadOptions(local);
 			await options.hydrate(saved);
 			expect(options.rawOptions.cameraID).toEqual(local);
-			expect(options.rawOptions.micName).toBe("Saved microphone");
+			expect(options.rawOptions.micName).toBeNull();
 		},
 	);
 
@@ -134,7 +128,7 @@ describe("camera preference hydration with Solid persistence", () => {
 		const invalid = { DeviceID: "camera-a", ModelID: "046d:08e5" };
 		const options = loadOptions(invalid);
 		expect(options.rawOptions.cameraID).toBeNull();
-		expect(options.rawOptions.micName).toBe("Local microphone");
+		expect(options.rawOptions.micName).toBeNull();
 		await options.hydrate(invalid);
 		expect(options.rawOptions.cameraID).toBeNull();
 		expect(

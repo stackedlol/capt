@@ -2,15 +2,10 @@ import { createQuery } from "@tanstack/solid-query";
 import { Store } from "@tauri-apps/plugin-store";
 import { onCleanup } from "solid-js";
 import type { AutomationsStore } from "~/utils/automations";
-import {
-	type GeneralSettingsStore,
-	RECORDING_START_SAFETY_DEFAULTS,
-	type RecordingStartSafetySettings,
-} from "~/utils/general-settings";
+import type { GeneralSettingsStore } from "~/utils/general-settings";
 import { createSerializedStore } from "~/utils/serialized-store";
 import type {
 	AnimatedGradientLibrary,
-	AuthStore,
 	HotkeysStore,
 	PresetsStore,
 	RecordingSettingsStore,
@@ -35,16 +30,6 @@ export const teleprompterDefaults: TeleprompterStore = {
 	showCueMarkers: true,
 	mirror: false,
 	windowOpacityPercent: 92,
-};
-
-export type UserProfileStore = {
-	userId: string | null;
-	profile: {
-		name: string | null;
-		email: string | null;
-		imageUrl: string | null;
-	};
-	updatedAt: number;
 };
 
 let _store: Promise<Store> | undefined;
@@ -121,24 +106,17 @@ export const animatedGradientsStore = {
 		animatedGradientDefaults,
 	),
 };
-export const authStore = declareStore<AuthStore>("auth");
 export const automationsStore = declareStore<AutomationsStore>("automations");
-export const userProfileStore = declareStore<UserProfileStore>("user_profile");
 export const hotkeysStore = declareStore<HotkeysStore>("hotkeys");
 export const generalSettingsStore =
 	declareStore<GeneralSettingsStore>("general_settings");
-export const recordingStartSafetyStore =
-	declareStore<RecordingStartSafetySettings>(
-		"recording_start_safety",
-		RECORDING_START_SAFETY_DEFAULTS,
-	);
 export const recordingSettingsStore = declareStore<RecordingSettingsStore>(
 	"recording_settings",
 	{
 		target: null,
 		micName: null,
 		cameraId: null,
-		mode: "instant",
+		mode: "studio",
 		systemAudio: false,
 		organizationId: null,
 		cameraDeviceSettings: {},

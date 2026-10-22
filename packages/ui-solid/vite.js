@@ -13,7 +13,7 @@ export default [
 			IconsResolver({
 				prefix: "Icon",
 				extension: "jsx",
-				customCollections: ["cap"],
+				customCollections: ["cap", "nucleo"],
 			}),
 		],
 		dts: fileURLToPath(new URL("./src/auto-imports.d.ts", import.meta.url)),
@@ -26,11 +26,14 @@ export default [
 				fileURLToPath(new URL("./icons", import.meta.url)),
 				// (svg) => svg.replace(/^<svg /, '<svg stroke="currentColor" ')
 			),
+			nucleo: FileSystemIconLoader(
+				fileURLToPath(new URL("./icons-nucleo", import.meta.url)),
+			),
 		},
 	}),
 	Unfonts({
 		fontsource: {
-			families: [{ name: "Geist Sans", weights: [400, 500, 700] }],
+			families: [{ name: "Manrope", weights: [300, 400, 500, 600, 700, 800] }],
 		},
 	}),
 ];

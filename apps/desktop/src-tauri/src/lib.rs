@@ -26,7 +26,6 @@ mod fake_window;
 mod flags;
 pub mod frame_ws;
 mod general_settings;
-mod gpui_app;
 mod hotkeys;
 mod http_client;
 mod import;
@@ -37,6 +36,7 @@ mod macos_save_panel;
 mod main_window_geometry;
 mod notifications;
 mod panel_manager;
+mod perf_stats;
 mod permissions;
 #[cfg(debug_assertions)]
 mod picker_benchmark;
@@ -46,7 +46,6 @@ mod preparing_finalization;
 mod presets;
 mod recording;
 mod recording_settings;
-mod recording_telemetry;
 mod recordings_locations;
 mod recovery;
 mod render_frame_event;
@@ -55,11 +54,9 @@ mod startup;
 #[cfg(debug_assertions)]
 mod stop_editor_benchmark;
 mod target_select_overlay;
-mod telemetry;
 mod thumbnails;
 mod tray;
 mod update_project_names;
-mod updates;
 mod upload;
 pub mod web_api;
 mod window_exclusion;
@@ -67,12 +64,11 @@ mod window_position_persistence;
 mod windows;
 
 use audio::AppSounds;
-use auth::{AuthStore, Plan};
 use camera::{CameraPreviewManager, CameraPreviewSender, CameraPreviewState};
 use cap_editor::{EditorInstance, EditorState};
 use cap_project::{
-    InstantRecordingMeta, ProjectConfiguration, RecordingMeta, RecordingMetaInner, SharingMeta,
-    StudioRecordingMeta, StudioRecordingStatus, UploadMeta, VideoUploadInfo, XY, ZoomSegment,
+    InstantRecordingMeta, ProjectConfiguration, RecordingMeta, RecordingMetaInner,
+    StudioRecordingMeta, StudioRecordingStatus, VideoUploadInfo, XY, ZoomSegment,
 };
 use cap_recording::{
     RecordingMode,
@@ -95,7 +91,6 @@ use editor_window::{EditorInstances, PendingEditorInstances, WindowEditorInstanc
 use ffmpeg::ffi::AV_TIME_BASE;
 use general_settings::GeneralSettingsStore;
 use kameo::{Actor, actor::ActorRef};
-use notifications::NotificationType;
 use recording::{InProgressRecording, RecordingEvent, RecordingInputKind};
 use scap_targets::{Display, DisplayId, WindowId, bounds::LogicalBounds};
 use screenshot_editor::{
@@ -125,7 +120,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::Listener;
-use tauri::{AppHandle, Emitter, Manager, State, Window, WindowEvent, ipc::Channel};
+use tauri::{AppHandle, Emitter, Manager, State, Window, WindowEvent};
 #[cfg(target_os = "linux")]
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -137,22 +132,16 @@ use tauri_plugin_shell::ShellExt;
 use tauri_specta::Event;
 use tokio::sync::{Mutex, RwLock, oneshot, watch};
 use tracing::*;
-use upload::{create_or_get_video, upload_screenshot_bytes, upload_screenshot_file, upload_video};
-use web_api::AuthedApiError;
-use web_api::ManagerExt as WebManagerExt;
-#[cfg(target_os = "macos")]
-use windows::hide_overlay;
 use windows::{
     CapWindowId, EditorRecordingTarget, EditorWindowIds, ScreenshotEditorWindowIds, ShowCapWindow,
     set_window_transparent, show_overlay,
 };
 
+use crate::recording::start_recording;
 use crate::recording_settings::{RecordingSettingsStore, RecordingTargetMode};
-use crate::{recording::start_recording, upload::build_video_meta};
 use exit_shutdown::{
     AppExitAction, ExitBlocked, ExitRequestDecision, app_exit_action, collect_device_inventory,
-    handle_exit_requested, prepare_then_begin_exit, recording_start_allowed, run_while_active,
-    with_idle_recording_state,
+    handle_exit_requested, recording_start_allowed, run_while_active, with_idle_recording_state,
 };
 use futures::FutureExt;
 use std::panic::AssertUnwindSafe;
@@ -783,22 +772,6 @@ pub(crate) fn app_is_exiting(app: &AppHandle) -> bool {
         Some(state) => state.is_exiting(),
         None => false,
     }
-}
-
-fn should_show_onboarding(app: &AppHandle) -> bool {
-    let settings = GeneralSettingsStore::get(app).ok().flatten();
-    let startup_completed = settings
-        .as_ref()
-        .map(|s| s.has_completed_startup)
-        .unwrap_or(false);
-    let onboarding_completed = settings
-        .as_ref()
-        .map(|s| s.has_completed_onboarding)
-        .unwrap_or(false);
-
-    !startup_completed
-        || !onboarding_completed
-        || !permissions::do_permissions_check(false).necessary_granted()
 }
 
 #[cfg(target_os = "macos")]
@@ -1491,7 +1464,6 @@ pub struct App {
     camera_in_use: bool,
     camera_cleanup_done: bool,
     camera_feed: ActorRef<feeds::camera::CameraFeed>,
-    server_url: String,
     logs_dir: Option<PathBuf>,
     disconnected_inputs: HashSet<RecordingInputKind>,
     was_camera_only_recording: bool,
@@ -1503,14 +1475,6 @@ pub enum VideoType {
     Screen,
     Output,
     Camera,
-}
-
-#[derive(Serialize, Deserialize, specta::Type, Debug)]
-pub enum UploadResult {
-    Success(String),
-    NotAuthenticated,
-    PlanCheckFailed,
-    UpgradeRequired,
 }
 
 #[derive(Serialize, Deserialize, specta::Type, Debug)]
@@ -1627,7 +1591,6 @@ impl App {
             self.handle
                 .try_state::<AppExitState>()
                 .is_some_and(|state| state.exit_pending()),
-            updates::recording_start_blocked(&self.handle),
         )?;
         #[cfg(target_os = "linux")]
         if mode != RecordingMode::Instant
@@ -2348,12 +2311,6 @@ async fn apply_mic_input(
         }
         Err(err) => Err(err),
     }
-}
-
-#[tauri::command]
-#[specta::specta]
-async fn upload_logs(app_handle: AppHandle) -> Result<(), String> {
-    logging::upload_log_file(&app_handle).await
 }
 
 #[tauri::command]
@@ -3521,11 +3478,6 @@ async fn cleanup_app_resources_for_exit(app: &AppHandle) {
 #[cfg(target_os = "macos")]
 fn finalize_app_exit(app: &AppHandle, exit_code: i32) -> ! {
     let _ = app;
-    sentry::Hub::with(|hub| {
-        if let Some(client) = hub.client() {
-            let _ = client.flush(Some(Duration::from_millis(250)));
-        }
-    });
     match app_exit_action(exit_code) {
         AppExitAction::Process(code) => force_exit(code),
     }
@@ -3573,12 +3525,6 @@ fn with_idle_app_for_title_flush<T>(
     let _clean_capture = app
         .try_state::<clean_capture::State>()
         .ok_or(ExitBlocked::StateUnavailable)?;
-    let updates = app
-        .try_state::<updates::UpdatesState>()
-        .ok_or(ExitBlocked::StateUnavailable)?;
-    if updates.is_installing() {
-        return Err(ExitBlocked::UpdateInstalling);
-    }
     with_idle_recording_state(
         &state,
         |state| {
@@ -3619,19 +3565,6 @@ fn begin_app_exit_if_idle(app: &AppHandle, restarting: bool) -> Result<bool, Exi
         }
         true
     })
-}
-
-pub(crate) fn prepare_app_exit(
-    app: &AppHandle,
-    prepare: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    let exit_state = app
-        .try_state::<AppExitState>()
-        .ok_or(ExitBlocked::StateUnavailable.message())?;
-    with_idle_app(app, true, || {
-        prepare_then_begin_exit(prepare, || exit_state.begin())
-    })
-    .map_err(|reason| reason.message().to_string())?
 }
 
 fn show_exit_blocked(app: &AppHandle, reason: ExitBlocked) {
@@ -5164,355 +5097,6 @@ pub struct UploadProgress {
     progress: f64,
 }
 
-#[derive(Debug, Deserialize, Type)]
-pub enum UploadMode {
-    Initial {
-        pre_created_video: Option<VideoUploadInfo>,
-    },
-    Reupload,
-}
-
-#[tauri::command]
-#[specta::specta]
-#[instrument(skip(app, channel))]
-async fn upload_exported_video(
-    app: AppHandle,
-    path: PathBuf,
-    mode: UploadMode,
-    channel: Channel<UploadProgress>,
-    organization_id: Option<String>,
-) -> Result<UploadResult, String> {
-    let Ok(Some(auth)) = AuthStore::get(&app) else {
-        AuthStore::set(&app, None).map_err(|e| e.to_string())?;
-        return Ok(UploadResult::NotAuthenticated);
-    };
-
-    let mut meta = RecordingMeta::load_for_project(&path).map_err(|v| v.to_string())?;
-
-    if matches!(meta.inner, RecordingMetaInner::Instant(_)) {
-        match upload::lifecycle::retry_existing(app.clone(), &path).await {
-            Ok(Some(link)) => return Ok(UploadResult::Success(link)),
-            Ok(None) => {}
-            Err(AuthedApiError::InvalidAuthentication) => {
-                return Ok(UploadResult::NotAuthenticated);
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-    }
-
-    let file_path = meta.output_path();
-    if !file_path.exists() {
-        notifications::send_notification(&app, notifications::NotificationType::UploadFailed);
-        return Err("Failed to upload video: Rendered video not found".to_string());
-    }
-
-    let metadata = build_video_meta(&file_path)
-        .map_err(|err| format!("Error getting output video meta: {err}"))?;
-
-    if !auth.is_upgraded() && metadata.duration_in_secs > 300.0 {
-        return Ok(UploadResult::UpgradeRequired);
-    }
-
-    channel.send(UploadProgress { progress: 0.0 }).ok();
-
-    let existing_video_id = upload::reusable_video_id(meta.sharing.as_ref(), meta.upload.as_ref());
-    let s3_config = match async {
-        let video_id = match mode {
-            UploadMode::Initial { pre_created_video } => {
-                if let Some(video_id) = existing_video_id.clone() {
-                    Some(video_id)
-                } else if let Some(pre_created) = pre_created_video {
-                    return Ok(pre_created.config);
-                } else {
-                    None
-                }
-            }
-            UploadMode::Reupload => {
-                let Some(sharing) = meta.sharing.clone() else {
-                    return Err("No sharing metadata found".into());
-                };
-
-                Some(sharing.id)
-            }
-        };
-
-        create_or_get_video(
-            &app,
-            false,
-            video_id,
-            Some(meta.pretty_name.clone()),
-            Some(metadata.clone()),
-            organization_id,
-        )
-        .await
-    }
-    .await
-    {
-        Ok(data) => data,
-        Err(AuthedApiError::InvalidAuthentication) => return Ok(UploadResult::NotAuthenticated),
-        Err(AuthedApiError::UpgradeRequired) => return Ok(UploadResult::UpgradeRequired),
-        Err(err) => return Err(err.to_string()),
-    };
-
-    if existing_video_id
-        .as_ref()
-        .is_some_and(|video_id| *video_id != s3_config.id)
-    {
-        return Err("Server did not preserve the existing share link".into());
-    }
-
-    let screenshot_path = meta.project_path.join("screenshots/display.jpg");
-    meta.upload = Some(UploadMeta::SinglePartUpload {
-        video_id: s3_config.id.clone(),
-        file_path: file_path.clone(),
-        screenshot_path: screenshot_path.clone(),
-        recording_dir: path.clone(),
-    });
-    meta.save_for_project()
-        .map_err(|error| format!("Failed to persist upload state: {error}"))?;
-
-    match upload_video(
-        &app,
-        s3_config.id.clone(),
-        file_path,
-        screenshot_path,
-        meta.sharing.is_some(),
-        Some(channel.clone()),
-    )
-    .await
-    {
-        Ok(uploaded_video) => {
-            channel.send(UploadProgress { progress: 1.0 }).ok();
-
-            let link = meta
-                .sharing
-                .as_ref()
-                .map(|sharing| sharing.link.clone())
-                .unwrap_or(uploaded_video.link);
-
-            meta.upload = Some(UploadMeta::Complete);
-            meta.sharing = Some(SharingMeta {
-                link: link.clone(),
-                id: uploaded_video.id.clone(),
-                content_hash: None,
-            });
-            meta.save_for_project()
-                .map_err(|error| format!("Failed to persist sharing state: {error}"))?;
-
-            let _ = app
-                .state::<ArcLock<ClipboardContext>>()
-                .write()
-                .await
-                .set_text(link.clone());
-
-            NotificationType::ShareableLinkCopied.send(&app);
-            Ok(UploadResult::Success(link))
-        }
-        Err(AuthedApiError::UpgradeRequired) => Ok(UploadResult::UpgradeRequired),
-        Err(e) => {
-            error!("Failed to upload video: {e}");
-
-            NotificationType::UploadFailed.send(&app);
-
-            meta.upload = Some(UploadMeta::Failed {
-                error: e.to_string(),
-            });
-            meta.save_for_project()
-                .map_err(|e| error!("Failed to save recording meta: {e}"))
-                .ok();
-
-            Err(e.to_string())
-        }
-    }
-}
-
-fn screenshot_project_path_from_path(path: &std::path::Path) -> Option<PathBuf> {
-    path.ancestors()
-        .find(|ancestor| ancestor.extension().and_then(|s| s.to_str()) == Some("cap"))
-        .map(std::path::Path::to_path_buf)
-}
-
-fn load_screenshot_project_meta(
-    path: &std::path::Path,
-) -> Result<(PathBuf, RecordingMeta), String> {
-    let project_path = screenshot_project_path_from_path(path)
-        .ok_or_else(|| format!("Could not find screenshot project for {}", path.display()))?;
-    let meta = RecordingMeta::load_for_project(&project_path)
-        .map_err(|err| format!("Failed to load screenshot metadata: {err}"))?;
-    Ok((project_path, meta))
-}
-
-fn save_screenshot_sharing(
-    project_path: &std::path::Path,
-    mut meta: RecordingMeta,
-    uploaded: &upload::UploadedItem,
-    content_hash: Option<String>,
-) -> Result<(), String> {
-    meta.sharing = Some(SharingMeta {
-        link: uploaded.link.clone(),
-        id: uploaded.id.clone(),
-        content_hash,
-    });
-    meta.save_for_project()
-        .map_err(|err| format!("Error saving project {}: {err}", project_path.display()))
-}
-
-#[derive(Serialize, Type, Debug)]
-#[serde(rename_all = "camelCase")]
-struct ScreenshotSharingState {
-    link: String,
-    content_hash: Option<String>,
-}
-
-#[derive(Serialize, Type, Debug)]
-#[serde(rename_all = "camelCase")]
-struct ScreenshotProjectShareState {
-    config: ProjectConfiguration,
-    sharing: Option<ScreenshotSharingState>,
-}
-
-async fn copy_screenshot_share_link(
-    clipboard: &MutableState<'_, ClipboardContext>,
-    link: String,
-    app: &AppHandle,
-) -> Result<(), String> {
-    let _ = clipboard.write().await.set_text(link);
-    notifications::send_notification(app, notifications::NotificationType::ShareableLinkCopied);
-    Ok(())
-}
-
-fn screenshot_share_link_for_hash(
-    sharing: Option<&SharingMeta>,
-    content_hash: &str,
-) -> Option<String> {
-    let sharing = sharing?;
-    if sharing.content_hash.as_deref() == Some(content_hash) {
-        return Some(sharing.link.clone());
-    }
-    None
-}
-
-async fn upgrade_required_result(app: &AppHandle) -> UploadResult {
-    if let Err(error) = open_pricing_page(app).await {
-        warn!(%error, "Failed to open pricing page");
-    }
-    UploadResult::UpgradeRequired
-}
-
-#[tauri::command]
-#[specta::specta]
-fn get_screenshot_project_share_state(
-    path: PathBuf,
-) -> Result<ScreenshotProjectShareState, String> {
-    let (project_path, meta) = load_screenshot_project_meta(&path)?;
-    let config = ProjectConfiguration::load(&project_path)
-        .map_err(|err| format!("Failed to load screenshot config: {err}"))?;
-    let sharing = meta.sharing.map(|sharing| ScreenshotSharingState {
-        link: sharing.link,
-        content_hash: sharing.content_hash,
-    });
-
-    Ok(ScreenshotProjectShareState { config, sharing })
-}
-
-#[tauri::command]
-#[specta::specta]
-#[instrument(skip(app, clipboard))]
-async fn copy_current_screenshot_share_link(
-    app: AppHandle,
-    clipboard: MutableState<'_, ClipboardContext>,
-    project_path: PathBuf,
-    content_hash: String,
-) -> Result<Option<UploadResult>, String> {
-    let (_, meta) = load_screenshot_project_meta(&project_path)?;
-    let Some(link) = screenshot_share_link_for_hash(meta.sharing.as_ref(), &content_hash) else {
-        return Ok(None);
-    };
-
-    copy_screenshot_share_link(&clipboard, link.clone(), &app).await?;
-    Ok(Some(UploadResult::Success(link)))
-}
-
-#[tauri::command]
-#[specta::specta]
-#[instrument(skip(app, clipboard))]
-async fn upload_screenshot(
-    app: AppHandle,
-    clipboard: MutableState<'_, ClipboardContext>,
-    screenshot_path: PathBuf,
-) -> Result<UploadResult, String> {
-    let Ok(Some(auth)) = AuthStore::get(&app) else {
-        AuthStore::set(&app, None).map_err(|e| e.to_string())?;
-        return Ok(UploadResult::NotAuthenticated);
-    };
-
-    if !auth.is_upgraded() {
-        return Ok(upgrade_required_result(&app).await);
-    }
-
-    println!("Uploading screenshot: {screenshot_path:?}");
-
-    let (project_path, meta) = load_screenshot_project_meta(&screenshot_path)?;
-    if let Some(sharing) = meta.sharing.as_ref() {
-        copy_screenshot_share_link(&clipboard, sharing.link.clone(), &app).await?;
-        return Ok(UploadResult::Success(sharing.link.clone()));
-    }
-
-    let uploaded = match upload_screenshot_file(&app, screenshot_path.clone(), None, None).await {
-        Ok(uploaded) => uploaded,
-        Err(AuthedApiError::InvalidAuthentication) => return Ok(UploadResult::NotAuthenticated),
-        Err(AuthedApiError::UpgradeRequired) => return Ok(upgrade_required_result(&app).await),
-        Err(e) => return Err(e.to_string()),
-    };
-    save_screenshot_sharing(&project_path, meta, &uploaded, None)?;
-
-    println!("Copying to clipboard: {:?}", uploaded.link);
-
-    copy_screenshot_share_link(&clipboard, uploaded.link.clone(), &app).await?;
-
-    Ok(UploadResult::Success(uploaded.link))
-}
-
-#[tauri::command]
-#[specta::specta]
-#[instrument(skip(app, clipboard, image_bytes))]
-async fn upload_rendered_screenshot(
-    app: AppHandle,
-    clipboard: MutableState<'_, ClipboardContext>,
-    image_bytes: Vec<u8>,
-    content_type: String,
-    project_path: PathBuf,
-    content_hash: Option<String>,
-) -> Result<UploadResult, String> {
-    let Ok(Some(auth)) = AuthStore::get(&app) else {
-        AuthStore::set(&app, None).map_err(|e| e.to_string())?;
-        return Ok(UploadResult::NotAuthenticated);
-    };
-
-    if !auth.is_upgraded() {
-        return Ok(upgrade_required_result(&app).await);
-    }
-
-    let (project_path, meta) = load_screenshot_project_meta(&project_path)?;
-    let existing_video_id = meta.sharing.as_ref().map(|sharing| sharing.id.clone());
-    let uploaded =
-        match upload_screenshot_bytes(&app, image_bytes, &content_type, existing_video_id, None)
-            .await
-        {
-            Ok(uploaded) => uploaded,
-            Err(AuthedApiError::InvalidAuthentication) => {
-                return Ok(UploadResult::NotAuthenticated);
-            }
-            Err(AuthedApiError::UpgradeRequired) => return Ok(upgrade_required_result(&app).await),
-            Err(e) => return Err(e.to_string()),
-        };
-    save_screenshot_sharing(&project_path, meta, &uploaded, content_hash)?;
-
-    copy_screenshot_share_link(&clipboard, uploaded.link.clone(), &app).await?;
-
-    Ok(UploadResult::Success(uploaded.link))
-}
-
 #[tauri::command]
 #[specta::specta]
 #[instrument(skip(window))]
@@ -5926,65 +5510,6 @@ fn list_screenshots_inner(
 #[tauri::command]
 #[specta::specta]
 #[instrument(skip(app))]
-async fn check_upgraded_and_update(app: AppHandle) -> Result<bool, String> {
-    println!("Checking upgraded status and updating...");
-
-    if let Ok(Some(settings)) = GeneralSettingsStore::get(&app)
-        && settings.commercial_license.is_some()
-    {
-        return Ok(true);
-    }
-
-    let Ok(Some(auth)) = AuthStore::get(&app) else {
-        return Ok(false);
-    };
-
-    if let Some(ref plan) = auth.plan
-        && plan.manual
-    {
-        return Ok(true);
-    }
-
-    println!("Fetching plan");
-    let response = app
-        .authed_api_request("/api/desktop/plan", |client, url| client.get(url))
-        .await
-        .map_err(|e| {
-            println!("Failed to fetch plan: {e}");
-            e.to_string()
-        })?;
-
-    println!("Plan fetch response status: {}", response.status());
-    let plan_data = response.json::<serde_json::Value>().await.map_err(|e| {
-        println!("Failed to parse plan response: {e}");
-        format!("Failed to parse plan response: {e}")
-    })?;
-
-    let is_pro = plan_data
-        .get("upgraded")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    println!("Pro status: {is_pro}");
-    let updated_auth = AuthStore {
-        secret: auth.secret,
-        user_id: auth.user_id,
-        plan: Some(Plan {
-            upgraded: is_pro,
-            manual: auth.plan.map(|p| p.manual).unwrap_or(false),
-            last_checked: chrono::Utc::now().timestamp() as i32,
-        }),
-        organizations: auth.organizations,
-        organizations_updated_at: auth.organizations_updated_at,
-    };
-    println!("Updating auth store with new pro status");
-    AuthStore::set(&app, Some(updated_auth)).map_err(|e| e.to_string())?;
-
-    Ok(is_pro)
-}
-
-#[tauri::command]
-#[specta::specta]
-#[instrument(skip(app))]
 fn open_external_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
     if let Ok(Some(settings)) = GeneralSettingsStore::get(&app)
         && settings.disable_auto_open_links
@@ -6290,21 +5815,11 @@ async fn editor_delete_project(
     Ok(())
 }
 
-async fn open_pricing_page(app: &AppHandle) -> Result<(), String> {
-    app.shell()
-        .open("https://cap.so/pricing?ref=desktop", None)
-        .map_err(|e| e.to_string())
-}
-
 // keep this async otherwise opening windows may hang on windows
 #[tauri::command]
 #[specta::specta]
 #[instrument(skip(app))]
 async fn show_window(app: AppHandle, window: ShowCapWindow) -> Result<(), String> {
-    if matches!(window, ShowCapWindow::Upgrade) {
-        return open_pricing_page(&app).await;
-    }
-
     if matches!(window, ShowCapWindow::Camera { .. }) {
         let operation_lock = app.state::<CameraWindowOperationLock>();
         let _operation_guard = operation_lock.lock().await;
@@ -6387,17 +5902,6 @@ async fn check_notification_permissions(app: AppHandle) {
 
 //     _guard
 // }
-
-#[tauri::command]
-#[specta::specta]
-#[instrument(skip(app))]
-async fn set_server_url(app: MutableState<'_, App>, server_url: String) -> Result<(), ()> {
-    let mut app = app.write().await;
-    telemetry::set_server_url(&server_url);
-    app.server_url = server_url;
-
-    Ok(())
-}
 
 #[tauri::command]
 #[specta::specta]
@@ -6569,13 +6073,6 @@ async fn await_camera_preview_ready(app: MutableState<'_, App>) -> Result<bool, 
     rx.await
         .map_err(|err| format!("error receiving ready signal: {err}"))?;
     Ok(true)
-}
-
-#[tauri::command]
-#[specta::specta]
-#[instrument(skip(app))]
-async fn update_auth_plan(app: AppHandle) {
-    AuthStore::update_auth_plan(&app).await.ok();
 }
 
 pub async fn open_target_picker(
@@ -6765,6 +6262,32 @@ fn typescript_exporter() -> specta_typescript::Typescript {
     })
 }
 
+// Exporting straight into tauri.ts truncated it before writing: an export that
+// failed (e.g. a u64 field, which specta refuses as BigInt) or a launch killed
+// mid-export left it empty, and every boot rewrote it, forcing a Vite reload of
+// the window that was still loading. Stage the export and only swap it in when
+// the bindings actually changed.
+#[cfg(any(debug_assertions, test))]
+fn export_typescript_bindings(
+    builder: &tauri_specta::Builder,
+    bindings_path: &Path,
+) -> Result<(), String> {
+    let staged =
+        bindings_path.with_file_name(format!(".tauri-bindings-{}.tmp", std::process::id()));
+    let result = builder
+        .export(typescript_exporter(), &staged)
+        .map_err(|error| error.to_string())
+        .and_then(|()| {
+            let exported = std::fs::read(&staged).map_err(|error| error.to_string())?;
+            if std::fs::read(bindings_path).is_ok_and(|current| current == exported) {
+                return Ok(());
+            }
+            std::fs::rename(&staged, bindings_path).map_err(|error| error.to_string())
+        });
+    let _ = std::fs::remove_file(&staged);
+    result
+}
+
 fn specta_builder() -> tauri_specta::Builder {
     tauri_specta::Builder::new()
         .commands(tauri_specta::collect_commands![
@@ -6776,13 +6299,10 @@ fn specta_builder() -> tauri_specta::Builder {
             set_mic_input,
             set_camera_input,
             set_native_camera_preview_enabled,
-            gpui_app::gpui_app_available,
-            gpui_app::switch_to_gpui_app,
             recording_settings::set_recording_mode,
-            upload_logs,
             get_system_diagnostics,
+            perf_stats::get_performance_stats,
             diagnostics::run_diagnostic,
-            diagnostics::upload_diagnostic_report,
             diagnostics::reveal_diagnostic_report,
             cli::get_cli_install_status,
             cli::install_cli,
@@ -6863,15 +6383,10 @@ fn specta_builder() -> tauri_specta::Builder {
             generate_keyboard_segments,
             render_screenshot_for_export,
             render_screenshot_project_for_export,
-            get_screenshot_project_share_state,
             permissions::open_permission_settings,
             permissions::do_permissions_check,
             permissions::request_permission,
             get_devices_snapshot,
-            upload_exported_video,
-            copy_current_screenshot_share_link,
-            upload_screenshot,
-            upload_rendered_screenshot,
             create_screenshot_editor_instance,
             update_screenshot_config,
             prewarm_screenshot_background,
@@ -6882,7 +6397,6 @@ fn specta_builder() -> tauri_specta::Builder {
             list_recent_recordings,
             list_screenshots,
             list_recent_screenshots,
-            check_upgraded_and_update,
             open_external_link,
             hotkeys::set_hotkey,
             reset_camera_permissions,
@@ -6904,7 +6418,6 @@ fn specta_builder() -> tauri_specta::Builder {
             platform::is_system_audio_capture_supported,
             list_fails,
             set_fail,
-            update_auth_plan,
             set_window_transparent,
             get_editor_meta,
             get_recording_meta_by_path,
@@ -6913,7 +6426,6 @@ fn specta_builder() -> tauri_specta::Builder {
             editor_recording::get_editor_recording_target,
             delete_recording_directory,
             set_pretty_name,
-            set_server_url,
             pick_recordings_folder,
             reset_recordings_folder,
             recordings_locations::count_recordings_to_migrate,
@@ -6955,10 +6467,7 @@ fn specta_builder() -> tauri_specta::Builder {
             automation::test_automation,
             automation::automation_should_open_screenshot_editor,
             automation::list_automation_capabilities,
-            updates::updates_check,
-            updates::updates_download_and_install,
             restart_app,
-            updates::updates_channel_changed,
         ])
         .events(tauri_specta::collect_events![
             linux_instant_camera::CameraPresentationRequested,
@@ -6988,18 +6497,14 @@ fn specta_builder() -> tauri_specta::Builder {
             recordings_locations::RecordingsMigrationProgress,
             target_select_overlay::TargetUnderCursor,
             hotkeys::OnEscapePress,
-            upload::UploadProgressEvent,
             import::VideoImportProgress,
             SetCaptureAreaPending,
             DevicesUpdated,
-            updates::UpdateDownloadProgress,
-            updates::UpdateReady,
             diagnostics::DiagnosticProgress,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Throw)
         .typ::<ProjectConfiguration>()
         .typ::<cap_project::AnimatedGradientLibrary>()
-        .typ::<AuthStore>()
         .typ::<presets::PresetsStore>()
         .typ::<hotkeys::HotkeysStore>()
         .typ::<general_settings::GeneralSettingsStore>()
@@ -7056,8 +6561,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
         camera::init_preview_profile(system.total_memory());
     }
 
-    telemetry::init();
-
     let tauri_context = tauri::generate_context!();
 
     let specta_builder = specta_builder();
@@ -7066,7 +6569,7 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
     {
         let bindings_path = std::path::Path::new("../src/utils/tauri.ts");
         if bindings_path.parent().is_some_and(|parent| parent.exists()) {
-            if let Err(err) = specta_builder.export(typescript_exporter(), bindings_path) {
+            if let Err(err) = export_typescript_bindings(&specta_builder, bindings_path) {
                 warn!(error = %err, "Failed to export TypeScript bindings");
             }
         } else {
@@ -7138,21 +6641,11 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
 
     let builder = builder
         .manage(startup)
-        .on_page_load(|webview, payload| {
-            if webview.label() == "onboarding"
-                && matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
-            {
-                webview.app_handle().state::<startup::Startup>().mark_ready();
-            }
-        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_oauth::init())
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(flags::plugin::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -7168,7 +6661,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                     flags
                 })
                 .with_denylist(&[
-                    CapWindowId::Onboarding.label().as_str(),
                     CapWindowId::Main.label().as_str(),
                     CapWindowId::Settings.label().as_str(),
                     "window-capture-occluder",
@@ -7177,7 +6669,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                     CapWindowId::Camera.label().as_str(),
                     CapWindowId::RecordingsOverlay.label().as_str(),
                     CapWindowId::RecordingControls.label().as_str(),
-                    CapWindowId::Upgrade.label().as_str(),
                     "editor",
                     "screenshot-editor",
                 ])
@@ -7219,50 +6710,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
 
             specta_builder.mount_events(&app);
             general_settings::init(&app);
-            // Before anything shows a window or initialises further state: when
-            // the native app owns the session, this one only exists to start it.
-            if gpui_app::redirect_at_startup_if_enabled(&app)? {
-                // Nothing is managed yet, so `ExitRequested` would otherwise
-                // spawn a cleanup with no `AppExitState` to guard it. Marking
-                // the exit as already begun takes the plain runtime-exit path.
-                let exit_state = AppExitState::default();
-                exit_state.begin();
-                app.manage(exit_state);
-                crash_sentinel::mark_clean_exit();
-
-                #[cfg(target_os = "macos")]
-                {
-                    if app.try_state::<gpui_app::StartupRedirectState>().is_none() {
-                        app.manage(gpui_app::StartupRedirectState::default());
-                    }
-                    finish_macos_startup_opens(&app, StartupOpenDestination::Gpui);
-                    gpui_app::retire_foreground_parent_for_handoff(&app);
-                    let app = app.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_millis(750)).await;
-                        let Some(reopen_pid) = app
-                            .try_state::<gpui_app::StartupRedirectState>()
-                            .and_then(|state| state.exit_if_pending())
-                        else {
-                            return;
-                        };
-                        if let Some(pid) = reopen_pid
-                        {
-                            match tokio::task::spawn_blocking(move || gpui_app::request_gpui_reopen(pid)).await {
-                                Ok(Ok(())) => info!(pid, "Queued a request to reopen Cap GPUI"),
-                                Ok(Err(error)) => warn!(pid, %error, "Could not confirm Cap GPUI reopening; the existing instance remains unchanged"),
-                                Err(error) => warn!(pid, %error, "Cap GPUI reopen forwarding did not finish"),
-                            }
-                        }
-                        app.exit(0);
-                    });
-                }
-
-                #[cfg(not(target_os = "macos"))]
-                app.exit(0);
-
-                return Ok(());
-            }
             app.manage(clean_capture::State::default());
             hotkeys::init(&app);
             configure_camera_blur_recovery(&app, previous_termination);
@@ -7281,8 +6728,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
             app.manage(PendingScreenshots::default());
             app.manage(FinalizingRecordings::default());
             app.manage(editor_preparing::PreparingConsumers::default());
-            app.manage(updates::UpdatesState::default());
-            updates::spawn_background_loop(app.clone());
 
             #[cfg(unix)]
             {
@@ -7297,6 +6742,10 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                         tracing::warn!("Failed to register SIGHUP handler");
                         return;
                     };
+                    let Ok(mut int) = signal(SignalKind::interrupt()) else {
+                        tracing::warn!("Failed to register SIGINT handler");
+                        return;
+                    };
                     loop {
                         tokio::select! {
                             signal = term.recv() => {
@@ -7304,6 +6753,12 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                                     return;
                                 }
                                 tracing::info!("Received SIGTERM; requesting graceful shutdown");
+                            }
+                            signal = int.recv() => {
+                                if signal.is_none() {
+                                    return;
+                                }
+                                tracing::info!("Received SIGINT; requesting graceful shutdown");
                             }
                             signal = hup.recv() => {
                                 if signal.is_none() {
@@ -7343,46 +6798,7 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                 }
             });
 
-            if let Ok(Some(auth)) = AuthStore::load(&app) {
-                sentry::configure_scope(|scope| {
-                    scope.set_user(auth.user_id.map(|id| sentry::User {
-                        id: Some(id),
-                        ..Default::default()
-                    }));
-                });
-            }
-
             {
-                let (server_url, should_update) = if cfg!(debug_assertions)
-                    && let Ok(url) = std::env::var("VITE_SERVER_URL")
-                {
-                    (url, true)
-                } else if let Some(url) = GeneralSettingsStore::get(&app)
-                    .ok()
-                    .flatten()
-                    .map(|v| v.server_url.clone())
-                {
-                    (url, false)
-                } else {
-                    (
-                        option_env!("VITE_SERVER_URL")
-                            .unwrap_or("https://cap.so")
-                            .to_string(),
-                        true,
-                    )
-                };
-
-                // This ensures settings reflects the correct value if it's set at startup
-                if should_update {
-                    GeneralSettingsStore::update(&app, |s| {
-                        s.server_url = server_url.clone();
-                    })
-                    .map_err(|err| warn!("Error updating server URL into settings store: {err}"))
-                    .ok();
-                }
-
-                telemetry::set_server_url(&server_url);
-
                 let camera_preview = CameraPreviewManager::new(&app);
                 let camera_session_id_handle = camera_preview.session_id_handle();
 
@@ -7417,7 +6833,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                     camera_in_use: false,
                     camera_cleanup_done: false,
                     camera_feed,
-                    server_url,
                     logs_dir: logs_dir.clone(),
                     disconnected_inputs: HashSet::new(),
                     was_camera_only_recording: false,
@@ -7473,7 +6888,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                 }
             });
 
-            upload::lifecycle::init(app.clone());
 
             spawn_mic_error_handler(app.clone(), mic_error_rx);
             spawn_device_watchers(app.clone());
@@ -7487,12 +6901,8 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
             tokio::spawn({
                 let app = app.clone();
                 async move {
-                    let startup_window = if should_show_onboarding(&app) {
-                        ShowCapWindow::Onboarding
-                    } else {
-                        ShowCapWindow::Main {
-                            init_target_mode: None,
-                        }
+                    let startup_window = ShowCapWindow::Main {
+                        init_target_mode: None,
                     };
                     match startup_window.show(&app).await {
                         Ok(window) => {
@@ -7502,6 +6912,8 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                             tracing::error!(%error, "Failed to open startup window");
                         }
                     }
+
+                    permissions::request_missing_necessary_permissions(app.clone()).await;
                 }
             });
 
@@ -7738,7 +7150,7 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                                 #[cfg(target_os = "macos")]
                                 return;
                             }
-                            CapWindowId::Upgrade | CapWindowId::ModeSelect => {
+                            CapWindowId::ModeSelect => {
                                 restore_main_and_target_select_windows(app);
                                 restore_camera_window(app);
                                 #[cfg(target_os = "macos")]
@@ -7792,16 +7204,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                 #[cfg(target_os = "macos")]
                 WindowEvent::Focused(focused) => {
                     let window_id = CapWindowId::from_str(label);
-
-                    if matches!(window_id, Ok(CapWindowId::Upgrade)) {
-                        for (label, window) in app.webview_windows() {
-                            if let Ok(id) = CapWindowId::from_str(&label)
-                                && matches!(id, CapWindowId::TargetSelectOverlay { .. })
-                            {
-                                hide_overlay(&window);
-                            }
-                        }
-                    }
 
                     if *focused
                         && let Ok(window_id) = window_id
@@ -7920,10 +7322,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
             if let Err(panic) = result {
                 let message = panic_payload_message(&panic);
                 tracing::error!(panic = %message, "Suppressed panic in Tauri WindowEvent handler");
-                sentry::capture_message(
-                    &format!("Tauri WindowEvent panic suppressed: {message}"),
-                    sentry::Level::Error,
-                );
             }
         });
 
@@ -7939,10 +7337,6 @@ pub async fn run(recording_logging_handle: LoggingHandle, logs_dir: Option<PathB
                 if let Err(panic) = result {
                     let message = panic_payload_message(&panic);
                     tracing::error!(panic = %message, "Suppressed panic in Tauri RunEvent handler");
-                    sentry::capture_message(
-                        &format!("Tauri RunEvent panic suppressed: {message}"),
-                        sentry::Level::Error,
-                    );
                 }
             });
     });
@@ -7969,18 +7363,9 @@ fn handle_single_instance(app: &AppHandle, args: Vec<String>) {
         return;
     }
 
-    if gpui_app::handle_update_handoff(app) {
-        return;
-    }
-
-    #[cfg(any(target_os = "macos", windows))]
-    if gpui_app::forward_deep_links_to_active_gpui(app, &args) {
-        return;
-    }
-
     let action_urls = args
         .iter()
-        .filter(|arg| arg.starts_with("cap-desktop://"))
+        .filter(|arg| arg.starts_with("capt://"))
         .filter_map(|arg| tauri::Url::parse(arg).ok())
         .collect::<Vec<_>>();
     if !action_urls.is_empty() {
@@ -8001,7 +7386,7 @@ fn handle_single_instance(app: &AppHandle, args: Vec<String>) {
             .show(&app)
             .await
             {
-                warn!(%error, "Could not show Cap recording controls");
+                warn!(%error, "Could not show Capt recording controls");
             }
         });
         return;
@@ -8037,10 +7422,6 @@ where
                 panic = %message,
                 "Suppressed panic in Tauri command"
             );
-            sentry::capture_message(
-                &format!("Tauri command '{command_name}' panicked: {message}"),
-                sentry::Level::Error,
-            );
             Err(format!("{command_name} failed unexpectedly"))
         }
     }
@@ -8065,12 +7446,10 @@ where
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StartupOpenDestination {
     Desktop,
-    Gpui,
 }
 
 #[cfg(any(target_os = "macos", test))]
 struct StartupOpenDispatch {
-    destination: StartupOpenDestination,
     urls: Vec<tauri::Url>,
 }
 
@@ -8080,39 +7459,28 @@ struct StartupOpenQueue {
     destination: Option<StartupOpenDestination>,
     cancelled: bool,
     urls: Vec<tauri::Url>,
-    gpui_forwarding: bool,
-    gpui_dispatched: Vec<tauri::Url>,
 }
 
 #[cfg(any(target_os = "macos", test))]
 impl StartupOpenQueue {
     fn request(&mut self, urls: Vec<tauri::Url>) -> Result<Option<StartupOpenDispatch>, String> {
         if self.cancelled {
-            return Err("Cap startup stopped before the project could be opened".into());
+            return Err("Capt startup stopped before the project could be opened".into());
         }
         if self.destination == Some(StartupOpenDestination::Desktop) {
-            return Ok(Some(StartupOpenDispatch {
-                destination: StartupOpenDestination::Desktop,
-                urls,
-            }));
+            return Ok(Some(StartupOpenDispatch { urls }));
         }
         let mut additions = Vec::new();
         for url in urls {
-            if self.urls.contains(&url)
-                || self.gpui_dispatched.contains(&url)
-                || additions.contains(&url)
-            {
+            if self.urls.contains(&url) || additions.contains(&url) {
                 continue;
             }
-            if self.urls.len() + self.gpui_dispatched.len() + additions.len() >= 64 {
-                return Err("Too many projects were requested while Cap was starting".into());
+            if self.urls.len() + additions.len() >= 64 {
+                return Err("Too many projects were requested while Capt was starting".into());
             }
             additions.push(url);
         }
         self.urls.extend(additions);
-        if self.destination == Some(StartupOpenDestination::Gpui) && !self.gpui_forwarding {
-            return Ok(self.take_queued());
-        }
         Ok(None)
     }
 
@@ -8125,37 +7493,17 @@ impl StartupOpenQueue {
     }
 
     fn take_queued(&mut self) -> Option<StartupOpenDispatch> {
-        let destination = self.destination?;
+        self.destination?;
         if self.urls.is_empty() {
             return None;
         }
         let urls = std::mem::take(&mut self.urls);
-        if destination == StartupOpenDestination::Gpui {
-            self.gpui_forwarding = true;
-            self.gpui_dispatched.extend(urls.iter().cloned());
-        }
-        Some(StartupOpenDispatch { destination, urls })
-    }
-
-    fn next_gpui_batch(&mut self) -> Option<StartupOpenDispatch> {
-        if self.cancelled
-            || self.destination != Some(StartupOpenDestination::Gpui)
-            || !self.gpui_forwarding
-        {
-            return None;
-        }
-        if let Some(dispatch) = self.take_queued() {
-            return Some(dispatch);
-        }
-        self.cancel();
-        None
+        Some(StartupOpenDispatch { urls })
     }
 
     fn cancel(&mut self) {
         self.cancelled = true;
         self.urls.clear();
-        self.gpui_dispatched.clear();
-        self.gpui_forwarding = false;
     }
 }
 
@@ -8221,76 +7569,7 @@ fn cancel_macos_startup_opens(app: &AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn dispatch_macos_startup_urls(app: &AppHandle, dispatch: StartupOpenDispatch) {
-    let urls = dispatch.urls;
-    let arguments = urls
-        .iter()
-        .map(|url| url.as_str().to_string())
-        .collect::<Vec<_>>();
-
-    if dispatch.destination == StartupOpenDestination::Gpui {
-        let Some(redirect) = app.try_state::<gpui_app::StartupRedirectState>() else {
-            warn!("Cap GPUI startup forwarding state is unavailable");
-            return;
-        };
-        if redirect.begin_forwarding() {
-            let app = app.clone();
-            tokio::spawn(async move {
-                let mut arguments = arguments;
-                let mut forwarded_pid = None;
-                loop {
-                    let forwarded = tokio::task::spawn_blocking(move || {
-                        gpui_app::forward_deep_links_to_gpui_when_ready(&arguments)
-                    })
-                    .await
-                    .ok()
-                    .flatten();
-                    if let Some(pid) = forwarded {
-                        forwarded_pid = Some(pid);
-                    } else {
-                        warn!("Could not forward the requested project batch to Cap GPUI");
-                    }
-                    let next = app.try_state::<StartupOpenGate>().and_then(|gate| {
-                        gate.0
-                            .lock()
-                            .ok()
-                            .and_then(|mut queue| queue.next_gpui_batch())
-                    });
-                    let Some(next) = next else {
-                        break;
-                    };
-                    arguments = next
-                        .urls
-                        .iter()
-                        .map(|url| url.as_str().to_string())
-                        .collect();
-                }
-
-                if let Some(pid) = forwarded_pid
-                    && let Err(error) = app.run_on_main_thread(move || {
-                        gpui_app::activate_instance(pid);
-                    })
-                {
-                    warn!(%error, "Could not activate Cap GPUI after forwarding a project");
-                }
-                if app
-                    .try_state::<gpui_app::StartupRedirectState>()
-                    .is_some_and(|state| state.exit_after_forwarding())
-                {
-                    app.exit(0);
-                }
-            });
-        } else {
-            cancel_macos_startup_opens(app);
-            warn!("Cap GPUI handoff already finished before the project could be forwarded");
-        }
-        return;
-    }
-
-    if gpui_app::forward_deep_links_to_active_gpui(app, &arguments) {
-        return;
-    }
-
-    for url in urls {
+    for url in dispatch.urls {
         if url.scheme() == "file"
             && let Ok(path) = url.to_file_path()
             && let Err(error) = open_project_from_path(&path, app.clone())
@@ -8310,33 +7589,10 @@ fn handle_run_event(_handle: &AppHandle, event: tauri::RunEvent) {
         }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => {
-            if _handle
-                .try_state::<gpui_app::StartupRedirectState>()
-                .is_some()
-            {
-                return;
-            }
-
-            if gpui_app::handle_update_handoff(_handle) {
-                return;
-            }
-
-            let should_focus_onboarding = should_show_onboarding(_handle);
-
-            if should_focus_onboarding
-                && let Some(onboarding) = CapWindowId::Onboarding.get(_handle)
-            {
-                onboarding.show().ok();
-                onboarding.set_focus().ok();
-                return;
-            }
-
             let has_window = _handle.webview_windows().iter().any(|(label, _)| {
                 label.starts_with("editor-")
                     || label.starts_with("screenshot-editor-")
                     || label.as_str() == "settings"
-                    || label.as_str() == "signin"
-                    || (should_focus_onboarding && label.as_str() == "onboarding")
             });
 
             if has_window {
@@ -8347,8 +7603,6 @@ fn handle_run_event(_handle: &AppHandle, event: tauri::RunEvent) {
                         label.starts_with("editor-")
                             || label.starts_with("screenshot-editor-")
                             || label.as_str() == "settings"
-                            || label.as_str() == "signin"
-                            || (should_focus_onboarding && label.as_str() == "onboarding")
                     })
                     .map(|(_, window)| window.clone())
                 {
@@ -8629,155 +7883,6 @@ fn reopen_main_window(app: &AppHandle) {
             .await;
         });
     }
-}
-
-fn instant_upload_may_resume(inner: &RecordingMetaInner) -> bool {
-    !matches!(
-        inner,
-        RecordingMetaInner::Instant(
-            InstantRecordingMeta::InProgress { .. } | InstantRecordingMeta::Failed { .. }
-        )
-    )
-}
-
-#[cfg(test)]
-fn load_instant_resume_candidate(path: &std::path::Path) -> Result<Option<RecordingMeta>, String> {
-    load_upload_resume_candidate(path, true).map(|candidate| candidate.map(|(meta, _lock)| meta))
-}
-
-fn load_upload_resume_candidate(
-    path: &std::path::Path,
-    mark_crashed: bool,
-) -> Result<Option<(RecordingMeta, cap_recording::upload_resume::UploadLock)>, String> {
-    load_upload_resume_candidate_at(path, mark_crashed, SystemTime::now())
-}
-
-fn load_upload_resume_candidate_at(
-    path: &std::path::Path,
-    mark_crashed: bool,
-    now: SystemTime,
-) -> Result<Option<(RecordingMeta, cap_recording::upload_resume::UploadLock)>, String> {
-    if !mark_crashed && !upload::recovery_age::eligible(path, now) {
-        return Ok(None);
-    }
-    let lock = match upload::acquire_upload_lock(path) {
-        Ok(lock) => lock,
-        Err(_) => return Ok(None),
-    };
-    let mut meta = RecordingMeta::load_for_project(path).map_err(|error| error.to_string())?;
-    if mark_crashed {
-        let changed = match &mut meta.inner {
-            RecordingMetaInner::Instant(InstantRecordingMeta::InProgress { .. }) => {
-                meta.inner = RecordingMetaInner::Instant(InstantRecordingMeta::Failed {
-                    error: "Recording crashed".into(),
-                });
-                true
-            }
-            RecordingMetaInner::Studio(studio) => {
-                if let StudioRecordingMeta::MultipleSegments { inner } = &mut **studio
-                    && matches!(inner.status, Some(StudioRecordingStatus::InProgress))
-                {
-                    inner.status = Some(StudioRecordingStatus::Failed {
-                        error: "Recording crashed".into(),
-                    });
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        };
-        if changed {
-            meta.save_for_project().map_err(|error| error.to_string())?;
-        }
-    }
-    if !upload::recovery_age::eligible(path, now) {
-        return Ok(None);
-    }
-    upload::lifecycle::reconcile_reupload(&mut meta).map_err(|error| error.to_string())?;
-    Ok(instant_upload_may_resume(&meta.inner).then_some((meta, lock)))
-}
-
-async fn resume_uploads(app: AppHandle, mark_crashed: bool) -> Result<(), String> {
-    upload::lifecycle::reap().await;
-    if app_is_exiting(&app) || !upload::lifecycle::has_capacity() {
-        return Ok(());
-    }
-    let scan_app = app.clone();
-    let paths = tokio::task::spawn_blocking(move || {
-        let mut paths = Vec::new();
-        for directory in recordings_locations::known_recordings_dirs(&scan_app) {
-            let Ok(entries) = std::fs::read_dir(directory) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                if app_is_exiting(&scan_app) {
-                    return paths;
-                }
-                let path = entry.path();
-                if path.extension().and_then(|value| value.to_str()) == Some("cap")
-                    && (mark_crashed || upload::recovery_age::eligible(&path, SystemTime::now()))
-                {
-                    paths.push(path);
-                }
-            }
-        }
-        paths
-    })
-    .await
-    .map_err(|error| error.to_string())?;
-    for path in paths {
-        if app_is_exiting(&app) || !upload::lifecycle::has_capacity() {
-            break;
-        }
-        let candidate_path = path.clone();
-        let candidate_app = app.clone();
-        let candidate = tokio::task::spawn_blocking(move || {
-            let mark_crashed = mark_crashed
-                && candidate_app
-                    .state::<startup::Startup>()
-                    .predates_launch(&candidate_path);
-            load_upload_resume_candidate(&candidate_path, mark_crashed)
-        })
-        .await
-        .map_err(|error| error.to_string())?;
-        let (meta, lock) = match candidate {
-            Ok(Some(candidate)) => candidate,
-            Ok(None) => continue,
-            Err(error) => {
-                warn!(%error, recording = %path.display(), "Recording upload state could not be read; files retained");
-                continue;
-            }
-        };
-        if matches!(
-            meta.upload,
-            None | Some(UploadMeta::Complete | UploadMeta::Failed { .. })
-        ) {
-            continue;
-        }
-        let fallback_audio = matches!(
-            &meta.inner,
-            RecordingMetaInner::Instant(InstantRecordingMeta::Complete {
-                sample_rate: Some(_),
-                ..
-            })
-        );
-        let required_audio =
-            match upload::lifecycle::resume_audio(&app, &path, fallback_audio).await {
-                Ok(Some(required_audio)) => required_audio,
-                Ok(None) => continue,
-                Err(error) => {
-                    warn!(%error, "Recording upload intent could not be read; files retained");
-                    continue;
-                }
-            };
-        if let Err(error) =
-            upload::lifecycle::resume_existing(app.clone(), meta, lock, required_audio).await
-        {
-            warn!(%error, "Upload retry remains local");
-        }
-    }
-    Ok(())
 }
 
 async fn create_editor_instance_impl(
@@ -9322,24 +8427,9 @@ mod startup_project_open_tests {
         let urls = vec![project("first"), project("second")];
         assert!(queue.request(urls.clone()).unwrap().is_none());
         let dispatch = queue.finish(StartupOpenDestination::Desktop).unwrap();
-        assert_eq!(dispatch.destination, StartupOpenDestination::Desktop);
         assert_eq!(dispatch.urls, urls);
         assert!(queue.urls.is_empty());
         assert!(queue.finish(StartupOpenDestination::Desktop).is_none());
-    }
-
-    #[test]
-    fn queued_files_follow_gpui_handoff_without_opening_classic_editors() {
-        let mut queue = StartupOpenQueue::default();
-        let url = project("handoff");
-        assert!(queue.request(vec![url.clone()]).unwrap().is_none());
-        let dispatch = queue.finish(StartupOpenDestination::Gpui).unwrap();
-        assert_eq!(dispatch.destination, StartupOpenDestination::Gpui);
-        assert_eq!(dispatch.urls, [url]);
-        assert!(queue.request(vec![project("later")]).unwrap().is_none());
-        let dispatch = queue.next_gpui_batch().unwrap();
-        assert_eq!(dispatch.destination, StartupOpenDestination::Gpui);
-        assert_eq!(dispatch.urls, [project("later")]);
     }
 
     #[test]
@@ -9348,7 +8438,6 @@ mod startup_project_open_tests {
         assert!(queue.finish(StartupOpenDestination::Desktop).is_none());
         let url = project("ready");
         let dispatch = queue.request(vec![url.clone()]).unwrap().unwrap();
-        assert_eq!(dispatch.destination, StartupOpenDestination::Desktop);
         assert_eq!(dispatch.urls, [url]);
     }
 
@@ -9369,28 +8458,23 @@ mod startup_project_open_tests {
         assert!(queue.urls.is_empty());
         assert!(queue.request(vec![project("later")]).is_err());
         assert!(queue.finish(StartupOpenDestination::Desktop).is_none());
-        assert!(queue.finish(StartupOpenDestination::Gpui).is_none());
     }
 
     #[test]
     fn completed_setup_guard_preserves_selected_destination() {
-        for destination in [
-            StartupOpenDestination::Desktop,
-            StartupOpenDestination::Gpui,
-        ] {
-            let gate = StartupOpenGate::default();
-            let guard = StartupOpenGuard(gate.clone());
-            assert!(gate.0.lock().unwrap().finish(destination).is_none());
-            drop(guard);
-            let dispatch = gate
-                .0
-                .lock()
-                .unwrap()
-                .request(vec![project("ready")])
-                .unwrap()
-                .unwrap();
-            assert_eq!(dispatch.destination, destination);
-        }
+        let destination = StartupOpenDestination::Desktop;
+        let gate = StartupOpenGate::default();
+        let guard = StartupOpenGuard(gate.clone());
+        assert!(gate.0.lock().unwrap().finish(destination).is_none());
+        drop(guard);
+        let dispatch = gate
+            .0
+            .lock()
+            .unwrap()
+            .request(vec![project("ready")])
+            .unwrap()
+            .unwrap();
+        assert_eq!(dispatch.urls, [project("ready")]);
     }
 
     #[test]
@@ -9410,43 +8494,13 @@ mod startup_project_open_tests {
     }
 
     #[test]
-    fn gpui_handoff_drains_later_batches_without_duplicate_dispatches() {
+    fn cancellation_stops_pending_dispatch() {
         let mut queue = StartupOpenQueue::default();
-        assert!(queue.finish(StartupOpenDestination::Gpui).is_none());
-        let first = queue.request(vec![project("first")]).unwrap().unwrap();
-        assert_eq!(first.urls, [project("first")]);
-        assert!(
-            queue
-                .request(vec![project("first"), project("second")])
-                .unwrap()
-                .is_none()
-        );
-        assert!(queue.request(vec![project("second")]).unwrap().is_none());
-        let second = queue.next_gpui_batch().unwrap();
-        assert_eq!(second.urls, [project("second")]);
-        assert_eq!(second.destination, StartupOpenDestination::Gpui);
-        assert!(queue.request(vec![project("third")]).unwrap().is_none());
-        assert_eq!(queue.next_gpui_batch().unwrap().urls, [project("third")]);
-        assert!(queue.next_gpui_batch().is_none());
+        assert!(queue.finish(StartupOpenDestination::Desktop).is_none());
+        assert!(queue.request(vec![project("first")]).unwrap().is_some());
+        queue.cancel();
         assert!(queue.request(vec![project("after-exit")]).is_err());
-    }
-
-    #[test]
-    fn cancellation_stops_desktop_dispatch_and_gpui_pending_batches() {
-        for destination in [
-            StartupOpenDestination::Desktop,
-            StartupOpenDestination::Gpui,
-        ] {
-            let mut queue = StartupOpenQueue::default();
-            assert!(queue.finish(destination).is_none());
-            assert!(queue.request(vec![project("first")]).unwrap().is_some());
-            let _ = queue.request(vec![project("pending")]).unwrap();
-            queue.cancel();
-            assert!(queue.request(vec![project("after-exit")]).is_err());
-            assert!(queue.next_gpui_batch().is_none());
-            assert!(queue.urls.is_empty());
-            assert!(queue.gpui_dispatched.is_empty());
-        }
+        assert!(queue.urls.is_empty());
     }
 }
 
@@ -10542,41 +9596,6 @@ mod requested_inputs_tests {
 }
 
 #[cfg(test)]
-mod screenshot_share_cache_tests {
-    use super::*;
-
-    fn sharing(content_hash: Option<&str>) -> SharingMeta {
-        SharingMeta {
-            id: String::from("video-id"),
-            link: String::from("https://cap.so/s/video-id"),
-            content_hash: content_hash.map(str::to_string),
-        }
-    }
-
-    #[test]
-    fn reuses_link_when_content_hash_matches() {
-        let link =
-            screenshot_share_link_for_hash(Some(&sharing(Some("hash-a"))), "hash-a").unwrap();
-
-        assert_eq!(link, "https://cap.so/s/video-id");
-    }
-
-    #[test]
-    fn does_not_reuse_link_when_content_hash_changed() {
-        let link = screenshot_share_link_for_hash(Some(&sharing(Some("hash-a"))), "hash-b");
-
-        assert!(link.is_none());
-    }
-
-    #[test]
-    fn does_not_reuse_legacy_link_without_content_hash() {
-        let link = screenshot_share_link_for_hash(Some(&sharing(None)), "hash-a");
-
-        assert!(link.is_none());
-    }
-}
-
-#[cfg(test)]
 mod recording_delete_path_tests {
     use super::recording_delete_target;
 
@@ -10685,8 +9704,7 @@ mod typescript_bindings_tests {
     fn export_typescript_bindings() {
         let bindings_path = std::path::Path::new("../src/utils/tauri.ts");
         if bindings_path.parent().is_some_and(|parent| parent.exists()) {
-            super::specta_builder()
-                .export(super::typescript_exporter(), bindings_path)
+            super::export_typescript_bindings(&super::specta_builder(), bindings_path)
                 .expect("failed to export TypeScript bindings");
         }
     }
@@ -10695,32 +9713,8 @@ mod typescript_bindings_tests {
 #[cfg(test)]
 mod instant_resume_safety_tests {
     use super::*;
+    use cap_project::UploadMeta;
 
-    #[test]
-    fn old_recordings_are_reconciled_once_but_skipped_before_periodic_metadata_reads() {
-        let path = project("old", InstantRecordingMeta::InProgress { recording: true });
-        let later = path.metadata().unwrap().created().unwrap() + Duration::from_secs(25 * 60 * 60);
-        assert!(
-            load_upload_resume_candidate_at(&path, true, later)
-                .unwrap()
-                .is_none()
-        );
-        assert!(matches!(
-            RecordingMeta::load_for_project(&path).unwrap().inner,
-            RecordingMetaInner::Instant(InstantRecordingMeta::Failed { .. })
-        ));
-        std::fs::write(path.join("recording-meta.json"), b"invalid").unwrap();
-        assert!(
-            load_upload_resume_candidate_at(&path, false, later)
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(
-            std::fs::read(path.join("recording-meta.json")).unwrap(),
-            b"invalid"
-        );
-        std::fs::remove_dir_all(path).unwrap();
-    }
     fn project(tag: &str, inner: InstantRecordingMeta) -> PathBuf {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
@@ -10750,90 +9744,7 @@ mod instant_resume_safety_tests {
         meta.save_for_project().unwrap();
         path
     }
-    #[test]
-    fn crashed_and_failed_projects_never_become_automatic_upload_candidates() {
-        for inner in [
-            InstantRecordingMeta::InProgress { recording: true },
-            InstantRecordingMeta::Failed {
-                error: "required audio failed".into(),
-            },
-        ] {
-            let path = project("failed", inner);
-            assert!(load_instant_resume_candidate(&path).unwrap().is_none());
-            let meta = RecordingMeta::load_for_project(&path).unwrap();
-            assert!(matches!(
-                meta.inner,
-                RecordingMetaInner::Instant(InstantRecordingMeta::Failed { .. })
-            ));
-            assert!(matches!(
-                meta.upload,
-                Some(UploadMeta::SegmentUpload { .. })
-            ));
-            assert!(path.is_dir());
-            std::fs::remove_dir_all(path).unwrap();
-        }
-    }
-    #[test]
-    fn positively_complete_project_remains_resumable_without_media_deletion() {
-        let path = project(
-            "complete",
-            InstantRecordingMeta::Complete {
-                fps: 30,
-                sample_rate: Some(48000),
-            },
-        );
-        assert!(load_instant_resume_candidate(&path).unwrap().is_some());
-        assert!(path.is_dir());
-        std::fs::remove_dir_all(path).unwrap();
-    }
-    #[test]
-    fn invalid_recovery_metadata_cannot_authorize_upload() {
-        let path = project(
-            "invalid",
-            InstantRecordingMeta::Complete {
-                fps: 30,
-                sample_rate: None,
-            },
-        );
-        std::fs::write(path.join("recording-meta.json"), b"invalid").unwrap();
-        assert!(load_instant_resume_candidate(&path).is_err());
-        assert!(path.is_dir());
-        std::fs::remove_dir_all(path).unwrap();
-    }
-    #[test]
-    fn periodic_reconciliation_does_not_mark_an_active_recording_failed() {
-        let path = project(
-            "periodic",
-            InstantRecordingMeta::InProgress { recording: true },
-        );
-        assert!(
-            load_upload_resume_candidate(&path, false)
-                .unwrap()
-                .is_none()
-        );
-        assert!(matches!(
-            RecordingMeta::load_for_project(&path).unwrap().inner,
-            RecordingMetaInner::Instant(InstantRecordingMeta::InProgress { recording: true })
-        ));
-        std::fs::remove_dir_all(path).unwrap();
-    }
 
-    #[test]
-    fn another_upload_owner_prevents_startup_metadata_mutation() {
-        let path = project(
-            "owned",
-            InstantRecordingMeta::InProgress { recording: true },
-        );
-        let lock = cap_recording::upload_resume::UploadLock::acquire(&path).unwrap();
-        let before = std::fs::read(path.join("recording-meta.json")).unwrap();
-        assert!(load_upload_resume_candidate(&path, true).unwrap().is_none());
-        assert_eq!(
-            std::fs::read(path.join("recording-meta.json")).unwrap(),
-            before
-        );
-        drop(lock);
-        std::fs::remove_dir_all(path).unwrap();
-    }
     #[test]
     fn explicit_delete_accepts_idle_gpui_recordings_while_resume_defers_them() {
         let path = project(

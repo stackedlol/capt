@@ -74,7 +74,7 @@ function CursorArrow(props: { svg: string }) {
 
 function CircleCursor() {
 	return (
-		<div class="size-7 rounded-full bg-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.38),inset_0_0_0_1px_rgba(255,255,255,0.42),0_0_5px_rgba(0,0,0,0.16)]" />
+		<div class="size-7 rounded-sm bg-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.38),inset_0_0_0_1px_rgba(255,255,255,0.42),0_0_5px_rgba(0,0,0,0.16)]" />
 	);
 }
 

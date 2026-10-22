@@ -420,7 +420,7 @@ export function BackgroundSettingsPopover() {
 																path: null,
 															})
 														}
-														class="p-2 text-white rounded-full transition-colors bg-black/50 hover:bg-black/70"
+														class="p-2 text-white rounded-sm transition-colors bg-black/50 hover:bg-black/70"
 													>
 														<IconCapCircleX class="w-4 h-4" />
 													</button>

@@ -181,7 +181,7 @@ export function EditorErrorScreen(props: {
 			<div class="flex-1 flex items-center justify-center p-8">
 				<div class="max-w-md w-full space-y-6">
 					<div class="flex flex-col items-center text-center space-y-3">
-						<div class="size-16 rounded-full bg-red-2 flex items-center justify-center">
+						<div class="size-16 rounded-sm bg-red-2 flex items-center justify-center">
 							<IconAlertTriangle class="size-8 text-red-9" />
 						</div>
 						<h2 class="text-xl font-semibold text-gray-12">

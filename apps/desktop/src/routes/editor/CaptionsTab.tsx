@@ -772,7 +772,7 @@ export function CaptionsTab(props: {
 		<div class="flex flex-col gap-3.5">
 			<div class="flex flex-row gap-2 items-center min-h-[22px]">
 				<SectionLabel name="Captions" />
-				<span class="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-ed-ctl text-ed-text-2">
+				<span class="px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-ed-ctl text-ed-text-2">
 					Beta
 				</span>
 			</div>
@@ -969,14 +969,14 @@ export function CaptionsTab(props: {
 							<Show when={isDownloading()}>
 								<div class="flex flex-col gap-1.5">
 									<div
-										class="overflow-hidden w-full h-1.5 rounded-full bg-ed-ctl"
+										class="overflow-hidden w-full h-1.5 rounded-[1px] bg-ed-ctl"
 										role="progressbar"
 										aria-valuemin="0"
 										aria-valuemax="100"
 										aria-valuenow={downloadPercent()}
 									>
 										<div
-											class="h-1.5 rounded-full transition-all duration-300 bg-ed-accent"
+											class="h-1.5 rounded-[1px] transition-all duration-300 bg-ed-accent"
 											style={{
 												width: `${clampDownloadProgress(downloadProgress())}%`,
 											}}
@@ -984,7 +984,7 @@ export function CaptionsTab(props: {
 									</div>
 									<p class="text-[11px] leading-relaxed text-ed-text-3">
 										{downloadMessage() ||
-											"Keep Cap open while the model downloads. Editor reloads will reconnect automatically."}
+											"Keep capt open while the model downloads. Editor reloads will reconnect automatically."}
 									</p>
 								</div>
 							</Show>
@@ -1158,7 +1158,7 @@ export function CaptionsTab(props: {
 							/>
 						</Field>
 						<p class="text-[11px] leading-relaxed text-ed-text-3">
-							This is the first version of captions in Cap. Active word
+							This is the first version of captions in capt. Active word
 							highlighting may be inaccurate in some situations. We're working
 							on a fix for this and it will be released in upcoming versions.
 						</p>

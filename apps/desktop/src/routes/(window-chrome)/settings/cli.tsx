@@ -46,7 +46,7 @@ export default function CliSettings() {
 
 		try {
 			mutate(await installCli());
-			toast.success("Cap CLI installed");
+			toast.success("capt CLI installed");
 		} catch (error) {
 			toast.error(errorMessage(error, "Failed to install CLI"));
 			await refetch();
@@ -60,7 +60,7 @@ export default function CliSettings() {
 
 		try {
 			mutate(await uninstallCli());
-			toast.success("Cap CLI removed");
+			toast.success("capt CLI removed");
 		} catch (error) {
 			toast.error(errorMessage(error, "Failed to remove CLI"));
 			await refetch();
@@ -79,7 +79,7 @@ export default function CliSettings() {
 			<SettingsPageContent>
 				<Section
 					title="Command Line"
-					description="Install the Cap command for terminals, agents, scripts, and local automation."
+					description="Install the capt command for terminals, agents, scripts, and local automation."
 				>
 					<SectionCard padded>
 						<Show

@@ -590,7 +590,7 @@ export function TextSegmentConfig(props: {
 								aria-pressed={styleGroup() === group}
 								onClick={() => setStyleGroup(group)}
 								class={cx(
-									"flex shrink-0 items-center px-1.5 h-[22px] text-[11px] font-medium rounded-full transition-colors",
+									"flex shrink-0 items-center px-1.5 h-[22px] text-[11px] font-medium rounded-sm transition-colors",
 									styleGroup() === group
 										? "bg-ed-ctl-active text-ed-text-1"
 										: "text-ed-text-2 hover:text-ed-text-1",

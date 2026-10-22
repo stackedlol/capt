@@ -324,7 +324,7 @@ export function TextTrack(props: {
 					const textContentRow = () => (
 						<div class="cap-seg-labels max-w-full">
 							<span
-								class="size-2 shrink-0 rounded-full ring-1 ring-ed-line-strong"
+								class="size-2 shrink-0 rounded-[1px] ring-1 ring-ed-line-strong"
 								style={{
 									"background-color": segment.color ?? "#ffffff",
 								}}

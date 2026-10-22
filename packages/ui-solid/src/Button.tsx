@@ -2,7 +2,7 @@ import { cva, type VariantProps } from "cva";
 import { type ComponentProps, splitProps } from "solid-js";
 
 const styles = cva(
-	"outline-offset-2 flex justify-center items-center focus-visible:outline-solid rounded-full transition-[background-color,border-color,color,box-shadow,filter,opacity,transform] active:scale-[0.98] will-change-transform duration-200",
+	"inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium outline-offset-2 transition-[background-color,border-color,color,box-shadow,opacity] duration-150 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-blue-9 disabled:cursor-default disabled:opacity-50",
 	{
 		defaultVariants: {
 			variant: "primary",
@@ -10,28 +10,22 @@ const styles = cva(
 		},
 		variants: {
 			variant: {
-				primary:
-					"bg-gray-12 dark-button-shadow text-gray-1 disabled:bg-gray-6 disabled:text-gray-9",
-				blue: "bg-blue-600 text-white border border-blue-800 shadow-[0_1.50px_0_0_rgba(255,255,255,0.20)_inset] hover:bg-blue-700  disabled:bg-gray-6 disabled:text-gray-9",
-				destructive:
-					"bg-red-500 text-white hover:bg-red-600 disabled:bg-red-200",
+				primary: "bg-gray-12 text-gray-1 hover:bg-gray-11 active:bg-gray-12",
+				blue: "bg-blue-9 text-white hover:bg-blue-10 active:bg-blue-9",
+				destructive: "bg-red-9 text-white hover:bg-red-10 active:bg-red-9",
 				outline:
-					"border border-gray-4 hover:border-gray-12 hover:bg-gray-12 hover:text-gray-1 text-gray-12 disabled:bg-gray-8",
+					"border border-gray-6 bg-transparent text-gray-12 hover:bg-gray-3 active:bg-gray-4",
 				white:
-					"bg-gray-1 border border-gray-6 text-gray-12 hover:bg-gray-3 disabled:bg-gray-8",
-				ghost: "hover:bg-white/20 hover:text-white",
-				gray: "bg-gray-5 data-[selected=true]:bg-gray-8! dark:data-[selected=true]:bg-gray-9! hover:bg-gray-7 border gray-button-border gray-button-shadow text-gray-12 disabled:bg-gray-8 disabled:text-gray-9",
-				dark: "bg-gray-12 dark-button-border dark-button-shadow hover:bg-gray-11 border text-gray-1 disabled:cursor-not-allowed disabled:text-gray-10 disabled:bg-gray-7 disabled:border-gray-8",
-				darkgradient:
-					"bg-linear-to-t button-gradient-border from-[#0f0f0f] to-[#404040] shadow-[0_0_0_1px] hover:brightness-110 shadow-[#383838] text-gray-50 hover:bg-[#383838] disabled:bg-[#383838] border-transparent",
-				radialblue:
-					"text-gray-50 border button-gradient-border shadow-[0_0_0_1px] shadow-blue-400 disabled:bg-gray-1 border-0 [background:radial-gradient(90%_100%_at_15%_12%,#9BC4FF_0%,#3588FF_100%)] border-transparent hover:opacity-80",
+					"border border-gray-5 bg-gray-1 text-gray-12 hover:bg-gray-2 active:bg-gray-3",
+				ghost: "bg-transparent text-gray-11 hover:bg-gray-3 hover:text-gray-12",
+				gray: "bg-gray-3 text-gray-12 hover:bg-gray-4 active:bg-gray-5 data-[selected=true]:bg-gray-5",
+				dark: "bg-gray-12 text-gray-1 hover:bg-gray-11 active:bg-gray-12",
 			},
 			size: {
-				xs: "text-[0.75rem] px-2 h-5",
-				sm: "text-xs px-3 h-7",
-				md: "text-[13px] px-3 py-2",
-				lg: "text-[0.875rem] px-4 h-9",
+				xs: "h-6 px-2 text-[11px]",
+				sm: "h-7 px-2.5 text-xs",
+				md: "h-8 px-3 text-[13px]",
+				lg: "h-9 px-4 text-[13px]",
 			},
 		},
 	},

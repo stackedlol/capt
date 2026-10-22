@@ -1,11 +1,11 @@
 //! Detects sessions that ended without a clean shutdown.
 //!
-//! A whole class of failures never reaches Sentry's panic hook because the process
+//! A whole class of failures never reaches a panic hook because the process
 //! is killed without panicking: a macOS WindowServer/GPU wedge that soft-restarts the
 //! login session, an OOM kill, a force-quit, or power loss. We catch those after the
 //! fact: every launch arms a sentinel file with this session's context, and a clean
 //! shutdown disarms it. If a launch finds a sentinel left over from a previous run,
-//! that run died unexpectedly — report it to Sentry with the captured context.
+//! that run died unexpectedly — log it with the captured context.
 
 use std::{
     path::{Path, PathBuf},
@@ -75,8 +75,7 @@ pub struct UnexpectedTermination {
 }
 
 /// Arm the sentinel for this session and, if a previous session's sentinel survived,
-/// report that unexpected termination to Sentry. Call once at startup, after Sentry
-/// is initialised. Returns details of the previous session's unexpected termination,
+/// log that unexpected termination. Call once at startup. Returns details of the previous session's unexpected termination,
 /// or `None` if the previous session shut down cleanly.
 pub fn init(logs_dir: Option<&Path>, app_version: &str) -> Option<UnexpectedTermination> {
     let os = format!(
@@ -85,11 +84,6 @@ pub fn init(logs_dir: Option<&Path>, app_version: &str) -> Option<UnexpectedTerm
         tauri_plugin_os::version()
     );
     let arch = tauri_plugin_os::arch().to_string();
-    sentry::configure_scope(|scope| {
-        scope.set_tag("os.full", &os);
-        scope.set_tag("arch", &arch);
-        scope.set_tag("app.version", app_version);
-    });
 
     let path = logs_dir?.join(SENTINEL_FILE);
     let mut previous_termination = None;
@@ -238,10 +232,6 @@ pub fn mark_blur_recovery() {
         session.record.blur_recovery = true;
         write_record(&session.path, &session.record);
     }
-
-    sentry::configure_scope(|scope| {
-        scope.set_tag("camera_blur_recovery", "true");
-    });
 }
 
 /// Record that this session is running in software-graphics recovery mode, so an
@@ -255,10 +245,6 @@ pub fn mark_graphics_recovery() {
         session.record.graphics_recovery = true;
         write_record(&session.path, &session.record);
     }
-
-    sentry::configure_scope(|scope| {
-        scope.set_tag("graphics_recovery", "true");
-    });
 }
 
 /// Record the result of the macOS Liquid Glass material attempt so that, if this
@@ -273,10 +259,6 @@ pub fn set_liquid_glass_outcome(outcome: &str) {
         session.record.liquid_glass = outcome.to_string();
         write_record(&session.path, &session.record);
     }
-
-    sentry::configure_scope(|scope| {
-        scope.set_tag("macos_liquid_glass", outcome);
-    });
 }
 
 /// Disarm the sentinel after a fully graceful shutdown. If this is never reached (the
@@ -291,6 +273,16 @@ pub fn mark_clean_exit() {
 }
 
 fn report_unexpected_termination(prev: &SessionRecord) {
+    // `tauri dev` force-kills the app on every Rust rebuild, so in debug builds an
+    // armed sentinel is the normal dev loop, not a crash.
+    if cfg!(debug_assertions) {
+        tracing::info!(
+            prev_pid = prev.pid,
+            prev_started_at = %prev.started_at,
+            "Previous dev session ended without a clean shutdown"
+        );
+        return;
+    }
     tracing::error!(
         prev_pid = prev.pid,
         prev_started_at = %prev.started_at,
@@ -301,28 +293,6 @@ fn report_unexpected_termination(prev: &SessionRecord) {
         prev_blur_active = prev.blur_active,
         prev_blur_recovery = prev.blur_recovery,
         "Previous Cap session terminated without a clean shutdown"
-    );
-
-    sentry::with_scope(
-        |scope| {
-            scope.set_tag("unexpected_termination", "true");
-            scope.set_tag("prev.os", &prev.os);
-            scope.set_tag("prev.arch", &prev.arch);
-            scope.set_tag("prev.app_version", &prev.app_version);
-            scope.set_tag("prev.macos_liquid_glass", &prev.liquid_glass);
-            scope.set_tag("prev.gpu_init_phase", prev.gpu_init_phase.to_string());
-            scope.set_tag("prev.graphics_recovery", prev.graphics_recovery.to_string());
-            scope.set_tag("prev.blur_active", prev.blur_active.to_string());
-            scope.set_tag("prev.blur_recovery", prev.blur_recovery.to_string());
-            scope.set_extra("prev.pid", prev.pid.into());
-            scope.set_extra("prev.started_at", prev.started_at.clone().into());
-        },
-        || {
-            sentry::capture_message(
-                "Cap session terminated unexpectedly (no clean shutdown)",
-                sentry::Level::Error,
-            );
-        },
     );
 }
 

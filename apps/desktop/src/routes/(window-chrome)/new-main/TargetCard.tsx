@@ -1,4 +1,3 @@
-import { ProgressCircle } from "@cap/ui-solid";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { remove } from "@tauri-apps/plugin-fs";
@@ -14,11 +13,6 @@ import {
 } from "solid-js";
 import toast from "solid-toast";
 import Tooltip from "~/components/Tooltip";
-import {
-	createScreenshotShareLinkFromProjectPath,
-	type ScreenshotExportStatus,
-	screenshotShareStatusText,
-} from "~/routes/screenshot-editor/screenshotExport";
 import { openRecordingFolder } from "~/utils/recording";
 import { createRecordingThumbnail } from "~/utils/recording-thumbnail";
 import {
@@ -35,7 +29,6 @@ import IconLucideCopy from "~icons/lucide/copy";
 import IconLucideEdit from "~icons/lucide/edit";
 import IconLucideFolder from "~icons/lucide/folder";
 import IconLucideImage from "~icons/lucide/image";
-import IconLucideRotateCcw from "~icons/lucide/rotate-ccw";
 import IconLucideSave from "~icons/lucide/save";
 import IconLucideSquarePlay from "~icons/lucide/square-play";
 import IconMdiMonitor from "~icons/mdi/monitor";
@@ -73,9 +66,6 @@ type TargetCardProps = (
 	| {
 			variant: "recording";
 			target: RecordingWithPath;
-			uploadProgress?: number;
-			isReuploading?: boolean;
-			onReupload?: (path: string) => void;
 			onRefetch?: () => void;
 	  }
 	| {
@@ -96,9 +86,6 @@ export default function TargetCard(props: TargetCardProps) {
 		"highlightQuery",
 	]);
 	const [imageExists, setImageExists] = createSignal(true);
-	const [isSharingScreenshot, setIsSharingScreenshot] = createSignal(false);
-	const [screenshotShareStatus, setScreenshotShareStatus] =
-		createSignal<ScreenshotExportStatus>("idle");
 
 	const recordingProps = () => {
 		if (local.variant !== "recording") return undefined;
@@ -268,38 +255,6 @@ export default function TargetCard(props: TargetCardProps) {
 		}
 	};
 
-	const handleShareScreenshot = async (e: MouseEvent) => {
-		e.stopPropagation();
-		if (isSharingScreenshot()) return;
-
-		const screenshot = screenshotTarget();
-		if (!screenshot) return;
-
-		setIsSharingScreenshot(true);
-		setScreenshotShareStatus("rendering");
-		const toastId = toast.loading(screenshotShareStatusText("rendering"));
-
-		try {
-			await createScreenshotShareLinkFromProjectPath(
-				screenshot.path,
-				(status) => {
-					setScreenshotShareStatus(status);
-					if (status !== "idle") {
-						toast.loading(screenshotShareStatusText(status), { id: toastId });
-					}
-				},
-			);
-			toast.success("Share link copied to clipboard", { id: toastId });
-		} catch (error) {
-			console.error("Failed to create screenshot share link:", error);
-			const message = error instanceof Error ? error.message : String(error);
-			toast.error(message || "Failed to create share link", { id: toastId });
-		} finally {
-			setIsSharingScreenshot(false);
-			setScreenshotShareStatus("idle");
-		}
-	};
-
 	const handleOpenRecordingEditor = (e: MouseEvent) => {
 		e.stopPropagation();
 		const recording = recordingTarget();
@@ -335,28 +290,11 @@ export default function TargetCard(props: TargetCardProps) {
 		recordingProps()?.onRefetch?.();
 	};
 
-	const handleReupload = (e: MouseEvent) => {
-		e.stopPropagation();
-		const recording = recordingTarget();
-		if (!recording) return;
-		recordingProps()?.onReupload?.(recording.path);
-	};
-
-	const recordingUploadFailed = createMemo(() => {
-		const recording = recordingTarget();
-		if (!recording) return false;
-		return recording.upload?.state === "Failed";
-	});
-
 	const recordingFailed = createMemo(() => {
 		const recording = recordingTarget();
 		if (!recording) return false;
 		return recording.status.status === "Failed";
 	});
-
-	const getUploadProgress = () => recordingProps()?.uploadProgress;
-
-	const getIsReuploading = () => recordingProps()?.isReuploading ?? false;
 
 	return (
 		<button
@@ -407,17 +345,15 @@ export default function TargetCard(props: TargetCardProps) {
 				<div class="absolute inset-0 border opacity-60 pointer-events-none border-black/5" />
 				<div class="absolute inset-x-0 bottom-0 h-10 bg-linear-to-t to-transparent pointer-events-none from-black/40" />
 				<Show when={(recordingTarget()?.clip_count ?? 0) > 1}>
-					<div class="absolute left-1 top-1 rounded-full bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
+					<div class="absolute left-1 top-1 rounded-sm bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
 						{recordingTarget()?.clip_count} clips
 					</div>
 				</Show>
-				<Show when={recordingFailed() || recordingUploadFailed()}>
+				<Show when={recordingFailed()}>
 					<div class="absolute inset-0 flex items-center justify-center bg-black/75">
 						<div class="flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-red-9/20 text-red-11">
 							<IconPhWarningBold class="size-2.5" />
-							<span class="text-[10px] font-medium">
-								{recordingFailed() ? "Recording failed" : "Upload failed"}
-							</span>
+							<span class="text-[10px] font-medium">Recording failed</span>
 						</div>
 					</div>
 				</Show>
@@ -472,34 +408,6 @@ export default function TargetCard(props: TargetCardProps) {
 								<IconLucideSave class="size-3.5" />
 							</div>
 						</Tooltip>
-						<Tooltip
-							content={screenshotShareStatusText(screenshotShareStatus())}
-						>
-							<div
-								role="button"
-								tabIndex={-1}
-								aria-disabled={isSharingScreenshot()}
-								onClick={handleShareScreenshot}
-								class={cx(
-									"flex-1 flex items-center justify-center p-1 rounded-sm hover:bg-gray-5 text-gray-11 hover:text-gray-12 transition-colors",
-									isSharingScreenshot() &&
-										"pointer-events-none opacity-60 hover:bg-transparent",
-								)}
-							>
-								<Show
-									when={isSharingScreenshot()}
-									fallback={<IconCapLink class="size-3.5" />}
-								>
-									<ProgressCircle
-										variant="primary"
-										progress={
-											screenshotShareStatus() === "uploading" ? 0.65 : 0.25
-										}
-										size="xs"
-									/>
-								</Show>
-							</div>
-						</Tooltip>
 					</div>
 				</Show>
 				<Show when={local.variant === "recording"}>
@@ -507,10 +415,6 @@ export default function TargetCard(props: TargetCardProps) {
 						const recording = recordingTarget();
 						if (!recording) return null;
 						const isStudio = recording.mode === "studio";
-						const uploadFailed = recordingUploadFailed();
-						const progress = getUploadProgress();
-						const reuploading = getIsReuploading();
-						const hasProgress = progress !== undefined || reuploading;
 
 						return (
 							<div class="flex items-center justify-between px-2 pb-1.5 pt-0.5 gap-1">
@@ -525,33 +429,6 @@ export default function TargetCard(props: TargetCardProps) {
 											<IconLucideEdit class="size-3.5" />
 										</div>
 									</Tooltip>
-								</Show>
-								<Show when={!isStudio}>
-									<Show
-										when={hasProgress}
-										fallback={
-											<Tooltip
-												content={uploadFailed ? "Retry upload" : "Reupload"}
-											>
-												<div
-													role="button"
-													tabIndex={-1}
-													onClick={handleReupload}
-													class="flex-1 flex items-center justify-center p-1 rounded-sm hover:bg-gray-5 text-gray-11 hover:text-gray-12 transition-colors"
-												>
-													<IconLucideRotateCcw class="size-3.5" />
-												</div>
-											</Tooltip>
-										}
-									>
-										<div class="flex-1 flex items-center justify-center p-1">
-											<ProgressCircle
-												variant="primary"
-												progress={progress ?? 0}
-												size="xs"
-											/>
-										</div>
-									</Show>
 								</Show>
 								<Show when={recording.sharing}>
 									<Tooltip content="Open link">

@@ -53,9 +53,7 @@ export function Subfield(
 		<div class={cx("flex flex-row justify-between items-center", props.class)}>
 			<span class="font-medium text-gray-12">
 				{props.name}
-				{props.required && (
-					<span class="ml-[2px] text-xs text-blue-500">*</span>
-				)}
+				{props.required && <span class="ml-[2px] text-xs text-blue-9">*</span>}
 			</span>
 			{props.children}
 		</div>
@@ -96,7 +94,7 @@ export function Slider(
 			}}
 		>
 			<KSlider.Track
-				class="h-[0.3rem] transition-[height] relative mx-1 bg-gray-4 rounded-full w-full before:content-[''] before:absolute before:inset-0 before:-top-3 before:-bottom-3"
+				class="h-[0.3rem] transition-[height] relative mx-1 bg-gray-4 rounded-sm w-full before:content-[''] before:absolute before:inset-0 before:-top-3 before:-bottom-3"
 				onPointerDown={() => {
 					setDragging(true);
 					createRoot((dispose) => {
@@ -107,7 +105,7 @@ export function Slider(
 					});
 				}}
 			>
-				<KSlider.Fill class="absolute -ml-2 h-full rounded-full bg-blue-9 data-disabled:bg-gray-8" />
+				<KSlider.Fill class="absolute -ml-2 h-full rounded-sm bg-blue-9 data-disabled:bg-gray-8" />
 				<Tooltip
 					open={dragging() ? true : undefined}
 					getAnchorRect={() => {
@@ -137,7 +135,7 @@ export function Slider(
 							setDragging(false);
 						}}
 						class={cx(
-							"bg-gray-1 dark:bg-gray-12 border border-gray-6 shadow-md rounded-full outline-hidden size-4 -top-[6.3px] data-disabled:bg-gray-9 after:content-[''] after:absolute after:inset-0 after:-m-3",
+							"bg-gray-1 dark:bg-gray-12 border border-gray-6 shadow-md rounded-sm outline-hidden size-4 -top-[6.3px] data-disabled:bg-gray-9 after:content-[''] after:absolute after:inset-0 after:-m-3",
 						)}
 					/>
 				</Tooltip>
@@ -151,7 +149,7 @@ export function Input(props: ComponentProps<"input">) {
 		<TextInput
 			{...props}
 			class={cx(
-				"rounded-lg bg-gray-2 hover:ring-1 py-[18px] hover:ring-gray-5 h-8 font-normal placeholder:text-black-transparent-40 text-xs caret-gray-500 transition-shadow duration-200 focus:ring-offset-1 focus:bg-gray-3 focus:ring-offset-gray-100 focus:ring-1 focus:ring-gray-10 px-2 w-full outline-hidden text-gray-12",
+				"rounded-md bg-gray-3 h-8 font-normal placeholder:text-gray-10 text-xs caret-blue-9 transition-[background-color,box-shadow] duration-150 hover:bg-gray-4 focus:bg-gray-4 focus:ring-1 focus:ring-blue-9 px-2 w-full outline-hidden text-gray-12",
 				props.class,
 			)}
 		/>
@@ -308,7 +306,7 @@ export function MenuItemList<T extends ValidComponent = "div">(
 
 const editorButtonStyles = cva(
 	[
-		"group flex flex-row items-center px-1.5 gap-1.5 h-8 rounded-lg text-[0.875rem]",
+		"group flex flex-row items-center px-1.5 gap-1.5 h-8 rounded-md text-[13px]",
 		"focus:outline-solid focus:outline-2 focus:outline-offset-2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 transition-colors duration-100",
 		"disabled:opacity-50 disabled:text-gray-11",
 	],

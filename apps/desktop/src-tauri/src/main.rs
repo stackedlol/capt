@@ -1,8 +1,6 @@
 #![recursion_limit = "256"]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Arc;
-
 use cap_desktop_lib::DynLoggingLayer;
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -49,41 +47,6 @@ fn main() {
     unsafe {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
-
-    // We have to hold onto the ClientInitGuard until the very end
-    let _sentry_guard = std::option_env!("CAP_DESKTOP_SENTRY_URL").map(|url| {
-        // Crashpad minidump initialization is intentionally disabled. Its process-wide SEH
-        // handler terminates through TerminateProcess, bypassing panic hooks, Tauri exit
-        // events, and Windows Error Reporting. Re-enable it by binding this guard and
-        // passing it to tauri_plugin_sentry::minidump::init once the WER trace is captured.
-        sentry::init((
-            url,
-            sentry::ClientOptions {
-                release: sentry::release_name!(),
-                debug: cfg!(debug_assertions),
-                before_send: Some(Arc::new(|mut event| {
-                    // this is irrelevant to us + users probably don't want us knowing their computer names
-                    event.server_name = None;
-
-                    #[cfg(debug_assertions)]
-                    {
-                        let msg = event.message.clone().unwrap_or("No message".into());
-                        println!("Sentry captured {}: {}", &event.level, &msg);
-                        println!("-- user: {:?}", &event.user);
-                        println!("-- event tags: {:?}", &event.tags);
-                        println!("-- event contexts: {:?}", &event.contexts);
-                        None
-                    }
-
-                    #[cfg(not(debug_assertions))]
-                    {
-                        Some(event)
-                    }
-                })),
-                ..Default::default()
-            },
-        ))
-    });
 
     let (reload_layer, handle) = tracing_subscriber::reload::Layer::new(None::<DynLoggingLayer>);
 
@@ -216,14 +179,6 @@ fn main() {
         .init();
 
     install_panic_hook(logs_dir.clone());
-
-    #[cfg(debug_assertions)]
-    sentry::configure_scope(|scope| {
-        scope.set_user(Some(sentry::User {
-            username: Some("_DEV_".into()),
-            ..Default::default()
-        }));
-    });
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

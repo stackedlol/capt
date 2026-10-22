@@ -1,70 +1,19 @@
 {
 	"$schema": "https://turbo.build/schema.json",
-	"globalDependencies": [".env", ".env"],
+	"globalDependencies": [".env"],
 	"globalEnv": ["*"],
 	"tasks": {
 		"build": {
 			"inputs": ["**/*.ts", "**/*.tsx", "!src-tauri/**", "!node_modules/**"],
 			"dependsOn": ["^build"],
-			"outputs": [".next/**", "!.next/cache/**", "dist/**"]
+			"outputs": ["dist/**"]
 		},
 		"@cap/desktop#build": {
 			"dependsOn": ["^build"],
 			"outputs": [".output/**"]
 		},
-		"@cap/chrome-extension#build": {
-			"inputs": [
-				"**/*.ts",
-				"**/*.tsx",
-				"**/*.css",
-				"*.html",
-				"public/**",
-				"vite.config.ts",
-				"vite.content.config.ts",
-				"vite.content-overlay.config.ts",
-				"tailwind.config.cjs",
-				"postcss.config.cjs",
-				"!node_modules/**",
-				"!dist/**",
-				"!test-results/**"
-			],
-			"dependsOn": ["^build"],
-			"outputs": ["dist/**"]
-		},
-		"build:web:docker": {
-			"inputs": ["**/*.ts", "**/*.tsx", "!src-tauri/**", "!node_modules/**"],
-			"dependsOn": ["^build"],
-			"outputs": [".next/**", "!.next/cache/**", "dist/**"]
-		},
-		"build:web": {
-			"inputs": ["**/*.ts", "**/*.tsx", "!src-tauri/**", "!node_modules/**"],
-			"dependsOn": ["^build"],
-			"outputs": [".next/**", "!.next/cache/**", "dist/**"]
-		},
 		"lint": {
 			"cache": false
-		},
-		"docker:up": {
-			"cache": false,
-			"persistent": true
-		},
-		"docker:stop": {
-			"cache": false
-		},
-		"docker:clean": {
-			"cache": false
-		},
-		"db:generate": {
-			"cache": false
-		},
-		"db:push": {
-			"cache": false,
-			"interactive": true
-		},
-		"dev": {
-			"dependsOn": ["db:push"],
-			"cache": false,
-			"persistent": true
 		},
 		"test": {
 			"inputs": ["**/*.ts", "**/*.tsx", "!node_modules/**"],

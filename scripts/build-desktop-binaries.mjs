@@ -96,8 +96,16 @@ async function buildSidecar(sidecar, target, ext) {
 			"debug",
 			`${sidecar.sourceBinary}${ext}`,
 		),
-		path.join(repoRoot, "target", "debug", `${sidecar.sourceBinary}${ext}`),
 	];
+	// `tauri dev` copies each staged sidecar to target/debug/<dest>, so when a
+	// sidecar keeps its source name (cap-muxer) that path holds a byte-identical
+	// copy of the release binary, not a debug build. Comparing against it made
+	// every launch discard and restage the sidecar, which restarted `tauri dev`.
+	if (!sidecar.destBinaries.includes(sidecar.sourceBinary)) {
+		debugBinaries.push(
+			path.join(repoRoot, "target", "debug", `${sidecar.sourceBinary}${ext}`),
+		);
+	}
 
 	if (await releaseBinaryMatchesDebugBinary(src, debugBinaries)) {
 		console.warn(

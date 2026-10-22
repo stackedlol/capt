@@ -61,7 +61,7 @@ function EqualizerBars() {
 			<For each={EQ_BARS}>
 				{(bar) => (
 					<span
-						class="w-[2px] h-full rounded-full bg-gray-11"
+						class="w-[2px] h-full rounded-[1px] bg-gray-11"
 						style={{
 							"transform-origin": "bottom",
 							animation: `cap-audio-eq ${bar.duration}s ease-in-out ${bar.delay}s infinite`,
@@ -325,7 +325,7 @@ export function AudioLibraryPanel(props: {
 														: "opacity-0 group-hover/tile:opacity-100",
 												)}
 											>
-												<span class="flex justify-center items-center rounded-full border shadow-sm backdrop-blur-sm transition-all duration-200 size-6 bg-black/40 border-white/25 text-white">
+												<span class="flex justify-center items-center rounded-sm border shadow-sm backdrop-blur-sm transition-all duration-200 size-6 bg-black/40 border-white/25 text-white">
 													<Show
 														when={isPreviewing()}
 														fallback={
@@ -348,7 +348,7 @@ export function AudioLibraryPanel(props: {
 											type="button"
 											aria-label={isReplace() ? "Use track" : "Add to timeline"}
 											class={cx(
-												"flex absolute top-1 right-1 justify-center items-center rounded-full border backdrop-blur-sm transition-all size-5",
+												"flex absolute top-1 right-1 justify-center items-center rounded-sm border backdrop-blur-sm transition-all size-5",
 												"opacity-0 group-hover/tile:opacity-100",
 												isPreviewing() && "opacity-100",
 												isBusy()
@@ -364,7 +364,7 @@ export function AudioLibraryPanel(props: {
 											<Show
 												when={!isBusy()}
 												fallback={
-													<div class="rounded-full border-2 animate-spin size-2.5 border-white/40 border-t-white" />
+													<div class="rounded-sm border-2 animate-spin size-2.5 border-white/40 border-t-white" />
 												}
 											>
 												<Show
@@ -392,11 +392,11 @@ export function AudioLibraryPanel(props: {
 				onClick={uploadTrack}
 				class="flex flex-col gap-1.5 justify-center items-center p-4 w-full text-center rounded-xl border border-dashed transition-colors bg-gray-2 border-gray-5 hover:bg-gray-3 hover:border-gray-7 disabled:opacity-60"
 			>
-				<span class="flex justify-center items-center mb-0.5 rounded-full size-9 bg-gray-3 text-gray-11">
+				<span class="flex justify-center items-center mb-0.5 rounded-sm size-9 bg-gray-3 text-gray-11">
 					<Show
 						when={!uploading()}
 						fallback={
-							<div class="rounded-full border-2 animate-spin size-4 border-gray-6 border-t-gray-11" />
+							<div class="rounded-sm border-2 animate-spin size-4 border-gray-6 border-t-gray-11" />
 						}
 					>
 						<IconLucideUpload class="size-4" />

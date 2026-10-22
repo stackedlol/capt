@@ -63,7 +63,7 @@ export function PresetsDropdown() {
 								>
 									<span class="mr-auto">Default</span>
 									<Show when={(presets.query.data?.default ?? null) === null}>
-										<span class="px-2 py-1 text-[11px] rounded-full bg-ed-ctl text-ed-text-2">
+										<span class="px-2 py-1 text-[11px] rounded-sm bg-ed-ctl text-ed-text-2">
 											Default
 										</span>
 									</Show>
@@ -120,7 +120,7 @@ export function PresetsDropdown() {
 											>
 												<span class="mr-auto">{preset.name}</span>
 												<Show when={presets.query.data?.default === i()}>
-													<span class="px-2 py-1 text-[11px] rounded-full bg-ed-ctl text-ed-text-2">
+													<span class="px-2 py-1 text-[11px] rounded-sm bg-ed-ctl text-ed-text-2">
 														Default
 													</span>
 												</Show>

@@ -210,8 +210,7 @@ export function PerformanceOverlay(_props: PerformanceOverlayProps) {
 			<div
 				class="absolute top-2 left-2 z-50 pointer-events-none select-none"
 				style={{
-					"font-family":
-						"ui-monospace, 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', Menlo, monospace",
+					"font-family": "Manrope, sans-serif",
 					"font-size": "10px",
 					"line-height": "1.4",
 					"font-variant-numeric": "tabular-nums",

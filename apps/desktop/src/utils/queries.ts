@@ -10,11 +10,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { batch, createEffect, createMemo, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { useRecordingOptions } from "~/routes/(window-chrome)/OptionsContext";
-import {
-	authStore,
-	generalSettingsStore,
-	recordingSettingsStore,
-} from "~/store";
+import { recordingSettingsStore } from "~/store";
 import { createQueryInvalidate } from "./events";
 import {
 	type CameraInfo,
@@ -24,7 +20,6 @@ import {
 	type RecordingTargetMode,
 	type ScreenCaptureTarget,
 } from "./tauri";
-import { orgCustomDomainClient, protectedHeaders } from "./web-api";
 
 export const listWindows = queryOptions({
 	queryKey: ["capture", "windows"] as const,
@@ -184,6 +179,10 @@ function isStoredCameraId(value: unknown): value is DeviceOrModelID | null {
 	return false;
 }
 
+export function localRecordingMode(mode: RecordingMode): RecordingMode {
+	return mode === "instant" ? "studio" : mode;
+}
+
 export function createOptionsQuery() {
 	const PERSIST_KEY = "recording-options-query-2";
 	const [_state, _setState] = createStore<{
@@ -206,14 +205,8 @@ export function createOptionsQuery() {
 		organizationId: null,
 	});
 
-	let microphoneRevision = 0;
 	let cameraRevision = 0;
 	const markInputChanges = (update: unknown) => {
-		if (
-			update === "micName" ||
-			(typeof update === "object" && update !== null && "micName" in update)
-		)
-			microphoneRevision++;
 		if (
 			update === "cameraID" ||
 			(typeof update === "object" && update !== null && "cameraID" in update)
@@ -246,9 +239,6 @@ export function createOptionsQuery() {
 			if (data?.target) {
 				_setState("captureTarget", data.target);
 			}
-			if (data?.micName !== undefined && microphoneRevision === 0) {
-				_setState("micName", data.micName);
-			}
 			if (
 				data?.cameraId !== undefined &&
 				cameraRevision === 0 &&
@@ -256,11 +246,8 @@ export function createOptionsQuery() {
 			) {
 				_setState("cameraID", reconcile(data.cameraId));
 			}
-			if (data?.mode && data.mode !== _state.mode) {
-				_setState("mode", data.mode);
-			}
-			if (data?.systemAudio !== undefined) {
-				_setState("captureSystemAudio", data.systemAudio);
+			if (data?.mode && localRecordingMode(data.mode) !== _state.mode) {
+				_setState("mode", localRecordingMode(data.mode));
 			}
 			if (data?.organizationId !== undefined) {
 				_setState("organizationId", data.organizationId);
@@ -285,8 +272,8 @@ export function createOptionsQuery() {
 	});
 
 	const storeListenerCleanup = recordingSettingsStore.listen((data) => {
-		if (data?.mode && data.mode !== _state.mode) {
-			_setState("mode", data.mode);
+		if (data?.mode && localRecordingMode(data.mode) !== _state.mode) {
+			_setState("mode", localRecordingMode(data.mode));
 		}
 	});
 	onCleanup(() => storeListenerCleanup.then((c) => c()));
@@ -297,6 +284,9 @@ export function createOptionsQuery() {
 	if (state.cameraID !== undefined && !isStoredCameraId(state.cameraID)) {
 		setState("cameraID", null);
 	}
+	if (state.mode === "instant") setState("mode", "studio");
+	if (state.micName !== null) setState("micName", null);
+	if (state.captureSystemAudio) setState("captureSystemAudio", false);
 
 	const setOptions = new Proxy(setState, {
 		apply(target, thisArg, args) {
@@ -329,38 +319,6 @@ export function createCurrentRecordingQuery() {
 	createQueryInvalidate(currentRecording, "currentRecordingChanged");
 
 	return currentRecording;
-}
-
-export function createLicenseQuery() {
-	const query = createQuery(() => ({
-		queryKey: ["licenseQuery"],
-		queryFn: async () => {
-			const settings = await generalSettingsStore.get();
-			const auth = await authStore.get();
-
-			if (auth?.plan?.upgraded || auth?.plan?.manual)
-				return { type: "pro" as const, ...auth.plan };
-			if (settings?.commercialLicense)
-				return {
-					type: "commercial" as const,
-					...settings.commercialLicense,
-					instanceId: settings.instanceId,
-				};
-			return { type: "personal" as const };
-		},
-	}));
-
-	const generalSettingsCleanup = generalSettingsStore.listen(() =>
-		query.refetch(),
-	);
-	const authCleanup = authStore.listen(() => query.refetch());
-
-	onCleanup(() => {
-		generalSettingsCleanup.then((cleanup) => cleanup());
-		authCleanup.then((cleanup) => cleanup());
-	});
-
-	return query;
 }
 
 function inputRequestWasSuperseded(error: unknown) {
@@ -432,40 +390,3 @@ export function createCameraMutation() {
 	);
 }
 
-export function createCustomDomainQuery() {
-	return useQuery(() => ({
-		queryKey: ["customDomain"] as const,
-		queryFn: async () => {
-			try {
-				const auth = await authStore.get();
-				if (!auth) return { custom_domain: null, domain_verified: null };
-				const response = await orgCustomDomainClient.getOrgCustomDomain({
-					headers: await protectedHeaders(),
-				});
-				if (response.status === 200) return response.body;
-			} catch (error) {
-				console.error("Error fetching custom domain:", error);
-				return { custom_domain: null, domain_verified: null };
-			}
-		},
-		// This is read during the editor's initial render, under its top-level
-		// Suspense boundary. Without placeholder data, a slow/offline network
-		// keeps the query pending and the whole editor stuck on the skeleton.
-		placeholderData: { custom_domain: null, domain_verified: null },
-		refetchOnMount: true,
-		refetchOnWindowFocus: true,
-	}));
-}
-
-export function createOrganizationsQuery() {
-	const auth = authStore.createQuery();
-
-	// Bootstrap only: auth.rs stamps organizations_updated_at even on org-fetch failure, stopping the loop on self-hosted where the endpoint is absent.
-	createEffect(() => {
-		if (auth.data?.user_id && !auth.data?.organizations_updated_at) {
-			commands.updateAuthPlan().catch(console.error);
-		}
-	});
-
-	return () => auth.data?.organizations ?? [];
-}

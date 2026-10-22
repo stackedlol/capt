@@ -187,23 +187,23 @@ export default function CaptureArea() {
 				>
 					<Show when={visible()}>
 						<div
-							class="scale-100 flex items-center p-1 gap-2 absolute w-auto h-14 rounded-full top-12"
+							class="scale-100 flex items-center p-1 gap-2 absolute w-auto h-14 rounded-sm top-12"
 							classList={{ "flex-row-reverse": ostype() === "windows" }}
 						>
 							<button
 								title="Close"
-								class="group flex items-center justify-center size-12 text-gray-11 shadow-xl shadow-black/30 bg-gray-1 border border-gray-5 hover:bg-gray-4 active:bg-gray-6 rounded-full transition-colors duration-200 cursor-default"
+								class="group flex items-center justify-center size-12 text-gray-11 shadow-xl shadow-black/30 bg-gray-1 border border-gray-5 hover:bg-gray-4 active:bg-gray-6 rounded-sm transition-colors duration-200 cursor-default"
 								type="button"
 								onClick={close}
 							>
 								<IconLucideX class="group-active:scale-90 transition-transform size-5 *:pointer-events-none" />
 							</button>
 							<div class="flex items-center h-full gap-2">
-								<div class="flex items-center justify-between gap-1 px-[3px] size-full shadow-xl shadow-black/30 bg-gray-1 border border-gray-5 rounded-full">
+								<div class="flex items-center justify-between gap-1 px-[3px] size-full shadow-xl shadow-black/30 bg-gray-1 border border-gray-5 rounded-sm">
 									<button
 										title="Reset"
 										type="button"
-										class="group flex items-center justify-center size-10 text-gray-11 hover:bg-gray-5 active:bg-gray-6 rounded-full transition-colors duration-200 cursor-default"
+										class="group flex items-center justify-center size-10 text-gray-11 hover:bg-gray-5 active:bg-gray-6 rounded-sm transition-colors duration-200 cursor-default"
 										onClick={reset}
 									>
 										<IconLucideRotateCcw class="group-active:scale-90 transition-transform size-5 *:pointer-events-none" />
@@ -211,7 +211,7 @@ export default function CaptureArea() {
 									<div class="inline-block my-3 w-px self-stretch bg-gray-3" />
 									<button
 										title="Fill"
-										class="group flex items-center justify-center size-10 text-gray-11 hover:bg-gray-5 active:bg-gray-6 rounded-full transition-colors duration-200 cursor-default"
+										class="group flex items-center justify-center size-10 text-gray-11 hover:bg-gray-5 active:bg-gray-6 rounded-sm transition-colors duration-200 cursor-default"
 										type="button"
 										onClick={() => cropperRef?.fill()}
 									>
@@ -220,7 +220,7 @@ export default function CaptureArea() {
 									<div class="inline-block my-3 w-px self-stretch bg-gray-3" />
 									<button
 										title="Aspect Ratio"
-										class="group flex items-center justify-center size-10 text-gray-11 hover:bg-gray-5 active:bg-gray-6 rounded-full transition-colors duration-200 cursor-default"
+										class="group flex items-center justify-center size-10 text-gray-11 hover:bg-gray-5 active:bg-gray-6 rounded-sm transition-colors duration-200 cursor-default"
 										type="button"
 										onClick={showCropOptionsMenu}
 									>
@@ -250,7 +250,7 @@ export default function CaptureArea() {
 
 								<div class="h-full transition-all duration-300 ease-out">
 									<button
-										class="group flex items-center justify-center px-3 h-full min-w-28 border border-gray-5 rounded-full gap-2 text-blue-10 disabled:text-gray-10 bg-gray-1 shadow-xl shadow-black/30 duration-200 enabled:hover:bg-blue-2 enabled:hover:border-blue-5 enabled:active:bg-blue-3 disabled:opacity-90 disabled:cursor-not-allowed disabled:bg-gray-3 disabled:border-gray-4 cursor-default"
+										class="group flex items-center justify-center px-3 h-full min-w-28 border border-gray-5 rounded-sm gap-2 text-blue-10 disabled:text-gray-10 bg-gray-1 shadow-xl shadow-black/30 duration-200 enabled:hover:bg-blue-2 enabled:hover:border-blue-5 enabled:active:bg-blue-3 disabled:opacity-90 disabled:cursor-not-allowed disabled:bg-gray-3 disabled:border-gray-4 cursor-default"
 										type="button"
 										disabled={!isValid()}
 										onClick={handleConfirm}

@@ -29,31 +29,17 @@ async setCameraInput(id: DeviceOrModelID | null, skipCameraWindow: boolean | nul
 async setNativeCameraPreviewEnabled(enabled: boolean) : Promise<null> {
     return await TAURI_INVOKE("set_native_camera_preview_enabled", { enabled });
 },
-async gpuiAppAvailable() : Promise<boolean> {
-    return await TAURI_INVOKE("gpui_app_available");
-},
-/**
- * Close this app and open the native one. The setting has already been written
- * by the caller, so a failure here has to be reported rather than swallowed:
- * the page reverts it.
- */
-async switchToGpuiApp() : Promise<null> {
-    return await TAURI_INVOKE("switch_to_gpui_app");
-},
 async setRecordingMode(mode: RecordingMode) : Promise<null> {
     return await TAURI_INVOKE("set_recording_mode", { mode });
-},
-async uploadLogs() : Promise<null> {
-    return await TAURI_INVOKE("upload_logs");
 },
 async getSystemDiagnostics() : Promise<SystemDiagnostics> {
     return await TAURI_INVOKE("get_system_diagnostics");
 },
+async getPerformanceStats() : Promise<PerformanceStats> {
+    return await TAURI_INVOKE("get_performance_stats");
+},
 async runDiagnostic(options: DiagnosticOptions) : Promise<DiagnosticRunResult> {
     return await TAURI_INVOKE("run_diagnostic", { options });
-},
-async uploadDiagnosticReport(reportPath: string) : Promise<null> {
-    return await TAURI_INVOKE("upload_diagnostic_report", { reportPath });
 },
 async revealDiagnosticReport(reportPath: string) : Promise<null> {
     return await TAURI_INVOKE("reveal_diagnostic_report", { reportPath });
@@ -295,9 +281,6 @@ async renderScreenshotForExport() : Promise<number[]> {
 async renderScreenshotProjectForExport(path: string) : Promise<ScreenshotProjectExport> {
     return await TAURI_INVOKE("render_screenshot_project_for_export", { path });
 },
-async getScreenshotProjectShareState(path: string) : Promise<ScreenshotProjectShareState> {
-    return await TAURI_INVOKE("get_screenshot_project_share_state", { path });
-},
 async openPermissionSettings(permission: OSPermission) : Promise<void> {
     await TAURI_INVOKE("open_permission_settings", { permission });
 },
@@ -309,18 +292,6 @@ async requestPermission(permission: OSPermission) : Promise<void> {
 },
 async getDevicesSnapshot() : Promise<DevicesUpdated> {
     return await TAURI_INVOKE("get_devices_snapshot");
-},
-async uploadExportedVideo(path: string, mode: UploadMode, channel: TAURI_CHANNEL<UploadProgress>, organizationId: string | null) : Promise<UploadResult> {
-    return await TAURI_INVOKE("upload_exported_video", { path, mode, channel, organizationId });
-},
-async copyCurrentScreenshotShareLink(projectPath: string, contentHash: string) : Promise<UploadResult | null> {
-    return await TAURI_INVOKE("copy_current_screenshot_share_link", { projectPath, contentHash });
-},
-async uploadScreenshot(screenshotPath: string) : Promise<UploadResult> {
-    return await TAURI_INVOKE("upload_screenshot", { screenshotPath });
-},
-async uploadRenderedScreenshot(imageBytes: number[], contentType: string, projectPath: string, contentHash: string | null) : Promise<UploadResult> {
-    return await TAURI_INVOKE("upload_rendered_screenshot", { imageBytes, contentType, projectPath, contentHash });
 },
 async createScreenshotEditorInstance() : Promise<SerializedScreenshotEditorInstance> {
     return await TAURI_INVOKE("create_screenshot_editor_instance");
@@ -351,9 +322,6 @@ async listScreenshots() : Promise<([string, ScreenshotMetaWithMetadata])[]> {
 },
 async listRecentScreenshots() : Promise<([string, ScreenshotMetaWithMetadata])[]> {
     return await TAURI_INVOKE("list_recent_screenshots");
-},
-async checkUpgradedAndUpdate() : Promise<boolean> {
-    return await TAURI_INVOKE("check_upgraded_and_update");
 },
 async openExternalLink(url: string) : Promise<null> {
     return await TAURI_INVOKE("open_external_link", { url });
@@ -423,9 +391,6 @@ async listFails() : Promise<{ [key in string]: boolean }> {
 async setFail(name: string, value: boolean) : Promise<void> {
     await TAURI_INVOKE("set_fail", { name, value });
 },
-async updateAuthPlan() : Promise<void> {
-    await TAURI_INVOKE("update_auth_plan");
-},
 async setWindowTransparent(value: boolean) : Promise<void> {
     await TAURI_INVOKE("set_window_transparent", { value });
 },
@@ -449,9 +414,6 @@ async deleteRecordingDirectory(path: string) : Promise<null> {
 },
 async setPrettyName(prettyName: string) : Promise<null> {
     return await TAURI_INVOKE("set_pretty_name", { prettyName });
-},
-async setServerUrl(serverUrl: string) : Promise<null> {
-    return await TAURI_INVOKE("set_server_url", { serverUrl });
 },
 async pickRecordingsFolder() : Promise<string | null> {
     return await TAURI_INVOKE("pick_recordings_folder");
@@ -576,17 +538,8 @@ async automationShouldOpenScreenshotEditor(target: ScreenCaptureTarget) : Promis
 async listAutomationCapabilities() : Promise<string[]> {
     return await TAURI_INVOKE("list_automation_capabilities");
 },
-async updatesCheck() : Promise<UpdateCheckResult | null> {
-    return await TAURI_INVOKE("updates_check");
-},
-async updatesDownloadAndInstall() : Promise<null> {
-    return await TAURI_INVOKE("updates_download_and_install");
-},
 async restartApp() : Promise<null> {
     return await TAURI_INVOKE("restart_app");
-},
-async updatesChannelChanged() : Promise<null> {
-    return await TAURI_INVOKE("updates_channel_changed");
 }
 }
 
@@ -624,9 +577,6 @@ requestSetTargetMode: RequestSetTargetMode,
 requestStartRecording: RequestStartRecording,
 setCaptureAreaPending: SetCaptureAreaPending,
 targetUnderCursor: TargetUnderCursor,
-updateDownloadProgress: UpdateDownloadProgress,
-updateReady: UpdateReady,
-uploadProgressEvent: UploadProgressEvent,
 videoImportProgress: VideoImportProgress
 }>({
 audioInputLevelChange: "audio-input-level-change",
@@ -659,9 +609,6 @@ requestSetTargetMode: "request-set-target-mode",
 requestStartRecording: "request-start-recording",
 setCaptureAreaPending: "set-capture-area-pending",
 targetUnderCursor: "target-under-cursor",
-updateDownloadProgress: "update-download-progress",
-updateReady: "update-ready",
-uploadProgressEvent: "upload-progress-event",
 videoImportProgress: "video-import-progress"
 })
 
@@ -729,8 +676,6 @@ trimStart?: number; volumeDb?: number; fadeIn?: number; fadeOut?: number;
  * without re-decoding the file.
  */
 duration?: number | null }
-export type AuthSecret = { api_key: string } | { token: string; expires: number }
-export type AuthStore = { secret: AuthSecret; user_id: string | null; plan: Plan | null; organizations?: Organization[]; organizations_updated_at?: number | null }
 export type AutomationActionCheck = { actionType: string; capability: string; supported: boolean }
 export type AutomationExportCompression = "maximum" | "social" | "web" | "potato"
 export type AutomationRecordingMode = "studio" | "instant"
@@ -756,7 +701,21 @@ frame: FrameConfiguration | null;
  * from `frame`: the decorative MacBook style is a mockup, this restores
  * something the capture really did hide, and the two are independent.
  */
-notch: NotchConfiguration | null }
+notch: NotchConfiguration | null;
+/**
+ * Ordered dither, halftone or ASCII drawn over a color or gradient
+ * backdrop.
+ */
+pattern?: BackgroundPatternConfiguration | null }
+/**
+ * Ordered patterns drawn over a gradient background for stylized screenshots.
+ */
+export type BackgroundPattern = "none" | "dither" | "halftone" | "ascii"
+export type BackgroundPatternConfiguration = { kind: BackgroundPattern;
+/**
+ * Cell size in px at 1080p output.
+ */
+scale: number; strength: number }
 export type BackgroundSource = { type: "wallpaper"; path: string | null } | { type: "image"; path: string | null } | { type: "color"; value: [number, number, number]; alpha?: number } | { type: "gradient"; from: [number, number, number]; to: [number, number, number]; angle?: number; noise_intensity?: number | null; noise_scale?: number | null; animated?: boolean | null; animation_speed?: number | null } | { type: "animatedGradient"; config: AnimatedGradientConfig }
 export type BorderConfiguration = { enabled: boolean; width: number; color: [number, number, number]; opacity: number }
 export type Camera = { hide: boolean; mirror: boolean; position: CameraPosition;
@@ -984,7 +943,6 @@ export type ColorCorrectionConfiguration = { screen: ColorCorrection; camera: Co
  * it crisp for legibility over vignettes and grain.
  */
 gradeCursor: boolean }
-export type CommercialLicense = { licenseKey: string; expiryDate: number | null; refresh: number; activatedOn: number }
 export type Condition = { type: "captureTargetIs"; target: CaptureTargetKind } | { type: "recordingModeIs"; mode: AutomationRecordingMode } | { type: "durationAtLeast"; secs: number } | { type: "durationAtMost"; secs: number } | { type: "windowTitleContains"; pattern: string } | { type: "organizationIs"; id: string }
 export type CornerStyle = "squircle" | "rounded"
 export type Crop = { position: XY<number>; size: XY<number> }
@@ -1084,7 +1042,7 @@ export type FrameStyle =
 "macbook"
 export type FrameTheme = "dark" | "light"
 export type FramesRendered = { renderedCount: number; totalFrames: number; type: "FramesRendered" }
-export type GeneralSettingsStore = { instanceId?: string; uploadIndividualFiles?: boolean; hideDockIcon?: boolean; autoCreateShareableLink?: boolean; enableNotifications?: boolean; disableAutoOpenLinks?: boolean; hasCompletedStartup?: boolean; theme?: AppTheme; commercialLicense?: CommercialLicense | null; lastVersion?: string | null; windowTransparency?: boolean; postStudioRecordingBehaviour?: PostStudioRecordingBehaviour; mainWindowRecordingStartBehaviour?: MainWindowRecordingStartBehaviour; custom_cursor_capture2?: boolean; serverUrl?: string; recordingCountdown?: number | null; enableNativeCameraPreview: boolean; autoZoomOnClicks?: boolean; defaultZoomAmount?: number | null;
+export type GeneralSettingsStore = { instanceId?: string; hideDockIcon?: boolean; enableNotifications?: boolean; disableAutoOpenLinks?: boolean; hasCompletedStartup?: boolean; theme?: AppTheme; windowTransparency?: boolean; postStudioRecordingBehaviour?: PostStudioRecordingBehaviour; mainWindowRecordingStartBehaviour?: MainWindowRecordingStartBehaviour; custom_cursor_capture2?: boolean; recordingCountdown?: number | null; enableNativeCameraPreview: boolean; autoZoomOnClicks?: boolean; defaultZoomAmount?: number | null;
 /**
  * `None` until [`init`] seeds it from whether this machine has a notched
  * display. From then on it is the user's preference and nothing re-reads
@@ -1102,13 +1060,7 @@ previousRecordingsPaths?: string[];
  * Cleared automatically when the app version changes (one retry per
  * update, since a new ort/wgpu/driver stack may have fixed the crash).
  */
-cameraBlurDisabledByCrash?: string | null; updateChannel?: UpdateChannel;
-/**
- * Run the experimental gpui-native app (`cap-gpui`) *instead of* this one:
- * while enabled, startup hands off to it and exits, and the native app's
- * own Experimental page hands back. See `gpui_app.rs`.
- */
-enableGpuiApp?: boolean }
+cameraBlurDisabledByCrash?: string | null }
 export type GifExportSettings = { fps: number; resolution_base: XY<number>; quality: GifQuality | null }
 export type GifQuality = {
 /**
@@ -1140,6 +1092,16 @@ export type KeyPressDisplay = { key: string; timeOffset: number }
 export type KeyboardData = { settings: KeyboardSettings }
 export type KeyboardSettings = { enabled: boolean; font: string; size: number; color: string; backgroundColor: string; backgroundOpacity: number; position: string; fontWeight: number; fadeDuration: number; lingerDuration: number; groupingThresholdMs: number; showModifiers: boolean; showSpecialKeys: boolean; uppercase: boolean }
 export type KeyboardTrackSegment = { id: string; start: number; end: number; displayText: string; keys?: KeyPressDisplay[]; fadeDurationOverride?: number | null; positionOverride?: string | null; colorOverride?: string | null; backgroundColorOverride?: string | null; fontSizeOverride?: number | null; uppercaseOverride?: boolean | null }
+/**
+ * The ff-tracking lens as a post pass over the composed frame. Strengths are
+ * 0..1; everything at zero with no palette skips the pass entirely.
+ */
+export type LensConfiguration = { palette: LensPalette; bloom: number; aberration: number; ledGrid: number; grain: number; depthOfField: number; vignette: number; scanlines: number }
+/**
+ * Five color stops from black to white that the lens maps luminance onto.
+ * Thermal through Paper are the ff-tracking palettes (MIT, Mustafa Saraç).
+ */
+export type LensPalette = "none" | "thermal" | "phosphor" | "amber" | "neon" | "mono" | "navy" | "paper" | "crimson"
 export type LogicalBounds = { position: LogicalPosition; size: LogicalSize }
 export type LogicalPosition = { x: number; y: number }
 export type LogicalSize = { width: number; height: number }
@@ -1179,13 +1141,11 @@ export type OSPermission = "screenRecording" | "camera" | "microphone" | "access
 export type OSPermissionStatus = "notNeeded" | "empty" | "granted" | "denied"
 export type OSPermissionsCheck = { screenRecording: OSPermissionStatus; microphone: OSPermissionStatus; camera: OSPermissionStatus; accessibility: OSPermissionStatus }
 export type OnEscapePress = null
-export type Organization = { id: string; name: string; ownerId: string; role?: string; canEditBrand?: boolean; iconUrl?: string | null; brandColors?: OrganizationBrandColors }
-export type OrganizationBrandColors = { primary: string | null; secondary: string | null; accent: string | null; background: string | null }
 export type OverlayTrack = { kind: OverlayTrackKind; track: number }
 export type OverlayTrackKind = "mask" | "image" | "text"
+export type PerformanceStats = { cpuPercent: number; appCpuPercent: number; memoryUsedBytes: number; memoryTotalBytes: number; appMemoryBytes: number }
 export type Phase = "awaitingShortcut" | "starting" | "recording" | "pausing" | "paused" | "resuming" | "resumeFailed" | "restarting" | "stopping" | "restoring"
 export type PhysicalSize = { width: number; height: number }
-export type Plan = { upgraded: boolean; manual: boolean; last_checked: number }
 export type Platform = "MacOS" | "Windows" | "Linux"
 export type PostDeletionBehaviour = "doNothing" | "reopenRecordingWindow"
 export type PostStudioRecordingBehaviour = "openEditor" | "showOverlay"
@@ -1218,7 +1178,7 @@ textSizeVersion?: number;
  * legacy configs are migrated on load by seeding both animation
  * durations from `fade_duration`.
  */
-textAnimVersion?: number }
+textAnimVersion?: number; lens?: LensConfiguration; tracker?: TrackerConfiguration }
 export type ProjectRecordingsMeta = { segments: SegmentRecordings[] }
 export type RecordingAction = "Started" | "InvalidAuthentication" | "UpgradeRequired"
 export type RecordingDeleted = { path: string }
@@ -1259,8 +1219,6 @@ export type ScreenshotOcrLine = { text: string; confidence: number | null; bound
 export type ScreenshotOcrRegion = { x: number; y: number; width: number; height: number }
 export type ScreenshotOcrResult = { text: string; lines: ScreenshotOcrLine[]; engine: string }
 export type ScreenshotProjectExport = { imageBytes: number[]; config: ProjectConfiguration; imageWidth: number; imageHeight: number }
-export type ScreenshotProjectShareState = { config: ProjectConfiguration; sharing: ScreenshotSharingState | null }
-export type ScreenshotSharingState = { link: string; contentHash: string | null }
 export type SegmentRecordings = { display: Video; camera: Video | null; mic: Audio | null; system_audio: Audio | null }
 export type SerializedEditorInstance = { instanceId: string; preparingPlayback: boolean; framesSocketUrl: string; preparingSnapshot: PreparingEditorChanged | null; recordingDuration: number; savedProjectConfig: ProjectConfiguration; recordings: ProjectRecordingsMeta; path: string;
 /**
@@ -1273,7 +1231,7 @@ export type SerializedScreenshotEditorInstance = { framesSocketUrl: string; path
 export type SetCaptureAreaPending = boolean
 export type ShadowConfiguration = { size: number; opacity: number; blur: number }
 export type SharingMeta = { id: string; link: string; content_hash?: string | null }
-export type ShowCapWindow = { Main: { init_target_mode: RecordingTargetMode | null } } | { Settings: { page: string | null } } | { Editor: { project_path: string } } | "RecordingsOverlay" | { WindowCaptureOccluder: { screen_id: DisplayId } } | { TargetSelectOverlay: { display_id: DisplayId; target_mode: RecordingTargetMode | null } } | { CaptureArea: { screen_id: DisplayId } } | { Camera: { centered: boolean } } | { InProgressRecording: { countdown: number | null; capture_target?: ScreenCaptureTarget | null } } | "Upgrade" | "ModeSelect" | { ScreenshotEditor: { path: string } } | "Onboarding"
+export type ShowCapWindow = { Main: { init_target_mode: RecordingTargetMode | null } } | { Settings: { page: string | null } } | { Editor: { project_path: string } } | "RecordingsOverlay" | { WindowCaptureOccluder: { screen_id: DisplayId } } | { TargetSelectOverlay: { display_id: DisplayId; target_mode: RecordingTargetMode | null } } | { CaptureArea: { screen_id: DisplayId } } | { Camera: { centered: boolean } } | { InProgressRecording: { countdown: number | null; capture_target?: ScreenCaptureTarget | null } } | "ModeSelect" | { ScreenshotEditor: { path: string } }
 export type SingleSegment = { display: VideoMeta; camera?: VideoMeta | null; audio?: AudioMeta | null; cursor?: string | null }
 export type Snapshot = { generation: number; phase: Phase | null; mode: RecordingMode | null; shortcut: string | null; error: string | null }
 export type SplitLayout = { screenZoom: number; screenPosition: XY<number>; cameraZoom: number; cameraPosition: XY<number> }
@@ -1355,17 +1313,15 @@ letterSpacing?: number; lineHeight?: number; opacity?: number; shadow?: number; 
 layoutTransition?: number }
 export type TimelineConfiguration = { segments: TimelineSegment[]; transitions: ClipTransition[]; zoomSegments: ZoomSegment[]; sceneSegments?: SceneSegment[]; maskSegments?: MaskSegment[]; textSegments?: TextSegment[]; captionSegments?: CaptionTrackSegment[]; keyboardSegments?: KeyboardTrackSegment[]; audioSegments?: AudioTrackSegment[]; styleSegments: StyleSegment[]; imageSegments: ImageSegment[]; camera3dSegments?: Camera3DSegment[] }
 export type TimelineSegment = { recordingSegment?: number; timescale: number; start: number; end: number; name?: string | null; speedAudioMode?: ClipSpeedAudioMode | null; volume?: number | null; hideCursor?: boolean | null }
+/**
+ * A computer-vision style box that follows the recorded cursor and locks on
+ * at every click. Recordings carry no glyph data, so the cursor and its
+ * clicks are what gets tracked.
+ */
+export type TrackerConfiguration = { enabled: boolean; color: [number, number, number]; lockColor: [number, number, number]; size: number; hatch: boolean; labels: boolean; lockDuration: number }
 export type TranscriptionEngine = "Whisper" | "Parakeet"
 export type Trigger = "screenshotTaken" | "studioRecordingFinished" | "instantRecordingFinished" | "recordingStarted" | "uploadCompleted" | "videoImported" | "recordingDeleted"
-export type UpdateChannel = "stable" | "nightly"
-export type UpdateCheckResult = { version: string; notes: string | null; channel: UpdateChannel }
-export type UpdateDownloadProgress = { downloaded: number; total: number | null }
-export type UpdateReady = { version: string; installed: boolean }
 export type UploadMeta = { state: "MultipartUpload"; video_id: string; file_path: string; pre_created_video: VideoUploadInfo; recording_dir: string } | { state: "SinglePartUpload"; video_id: string; recording_dir: string; file_path: string; screenshot_path: string } | { state: "SegmentUpload"; video_id: string; pre_created_video: VideoUploadInfo; recording_dir: string } | { state: "Failed"; error: string } | { state: "Complete" }
-export type UploadMode = { Initial: { pre_created_video: VideoUploadInfo | null } } | "Reupload"
-export type UploadProgress = { progress: number }
-export type UploadProgressEvent = { video_id: string; uploaded: string; total: string }
-export type UploadResult = { Success: string } | "NotAuthenticated" | "PlanCheckFailed" | "UpgradeRequired"
 export type Video = { duration: number; width: number; height: number; fps: number; start_time: number }
 export type VideoImportProgress = { project_path: string; stage: ImportStage; progress: number; message: string }
 export type VideoMeta = { path: string; fps?: number; start_time?: number | null; device_id?: string | null }

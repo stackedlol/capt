@@ -470,13 +470,13 @@ function ClipMenuToggleRow(props: {
 			<span
 				aria-hidden
 				class={cx(
-					"cap-toggle relative h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors",
+					"cap-toggle relative h-5 w-9 shrink-0 rounded-sm p-0.5 transition-colors",
 					props.checked ? "bg-ed-accent" : "bg-ed-ctl-active",
 				)}
 			>
 				<span
 					class={cx(
-						"cap-toggle-thumb block size-4 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.22)] transition-transform",
+						"cap-toggle-thumb block size-4 rounded-sm bg-white shadow-[0_1px_3px_rgba(0,0,0,0.22)] transition-transform",
 						props.checked && "translate-x-full",
 					)}
 				/>
@@ -593,7 +593,7 @@ function ClipSettingsControl(props: {
 		>
 			<Popover.Trigger
 				class={cx(
-					"pointer-events-auto flex items-center gap-0.5 rounded-full bg-ed-ctl-active px-1.5 py-0.5 text-[10px] font-medium text-ed-text-2 transition-colors hover:bg-ed-ctl-hover hover:text-ed-text-1",
+					"pointer-events-auto flex items-center gap-0.5 rounded-sm bg-ed-ctl-active px-1.5 py-0.5 text-[10px] font-medium text-ed-text-2 transition-colors hover:bg-ed-ctl-hover hover:text-ed-text-1",
 					props.triggerClass,
 				)}
 				aria-label="Clip settings"
@@ -1131,7 +1131,7 @@ export function ClipTrack(
 											transform: `translateX(${segmentX()}px)`,
 										}}
 									>
-										<div class="w-[2px] bottom-0 -top-2 rounded-full from-red-300 to-transparent bg-linear-to-b -translate-x-1/2" />
+										<div class="w-[2px] bottom-0 -top-2 rounded-[1px] from-red-300 to-transparent bg-linear-to-b -translate-x-1/2" />
 										<Switch>
 											<Match
 												when={(() => {
@@ -1146,7 +1146,7 @@ export function ClipTrack(
 													});
 
 													return (
-														<div class="overflow-hidden -top-8 z-10 h-7 rounded-full -translate-x-1/2">
+														<div class="overflow-hidden -top-8 z-10 h-7 rounded-sm -translate-x-1/2">
 															<CutOffsetButton
 																value={value()}
 																onClick={() => {
@@ -1186,10 +1186,10 @@ export function ClipTrack(
 													});
 
 													return (
-														<div class="flex absolute -top-8 flex-row w-0 h-7 rounded-full">
+														<div class="flex absolute -top-8 flex-row w-0 h-7 rounded-sm">
 															<CutOffsetButton
 																value={value()}
-																class="-left-px absolute rounded-r-full pl-1.5! rounded-tl-full"
+																class="-left-px absolute rounded-r-sm pl-1.5! rounded-tl-sm"
 																onClick={() => {
 																	setProject(
 																		"timeline",
@@ -1782,11 +1782,11 @@ export function ClipTrack(
 												transform: `translateX(${segmentX() + segmentWidth()}px)`,
 											}}
 										>
-											<div class="w-[2px] bottom-0 -top-2 rounded-full from-red-300 to-transparent bg-linear-to-b -translate-x-1/2" />
-											<div class="flex absolute -top-8 flex-row w-0 h-7 rounded-full">
+											<div class="w-[2px] bottom-0 -top-2 rounded-[1px] from-red-300 to-transparent bg-linear-to-b -translate-x-1/2" />
+											<div class="flex absolute -top-8 flex-row w-0 h-7 rounded-sm">
 												<CutOffsetButton
 													value={value()}
-													class="-right-px absolute rounded-l-full pr-1.5! rounded-tr-full"
+													class="-right-px absolute rounded-l-sm pr-1.5! rounded-tr-sm"
 													onClick={() => {
 														setProject(
 															"timeline",

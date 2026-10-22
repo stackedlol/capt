@@ -935,7 +935,7 @@ function ElementBox(props: {
 						>
 							<span
 								class={cx(
-									"block size-full rounded-full border border-white shadow-xs pointer-events-none",
+									"block size-full rounded-sm border border-white shadow-xs pointer-events-none",
 									props.resizable
 										? "bg-blue-9 transition-transform group-hover/handle:scale-125"
 										: "bg-gray-8 opacity-60",

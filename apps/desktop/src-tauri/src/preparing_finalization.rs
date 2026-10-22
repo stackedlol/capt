@@ -557,13 +557,11 @@ mod tests {
             project.work_path(),
             project.display_path(),
             "recording_stop",
-            None,
         );
         let candidate = crate::recording::remux_fragmented_recording_with_preparing(
             project.work_path(),
             project.display_path(),
             "recording_stop",
-            None,
             Some((&preparing, &completed)),
         );
         assert_eq!(candidate, ordinary);

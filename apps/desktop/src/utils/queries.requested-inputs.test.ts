@@ -72,8 +72,6 @@ vi.mock("~/routes/(window-chrome)/OptionsContext", () => ({
 	}),
 }));
 vi.mock("~/store", () => ({
-	authStore: {},
-	generalSettingsStore: {},
 	recordingSettingsStore: {
 		get: fixture.getSettings,
 		set: vi.fn(),
@@ -86,10 +84,6 @@ vi.mock("./tauri", () => ({
 		setMicInput: fixture.setMicInput,
 		setCameraInput: fixture.setCameraInput,
 	},
-}));
-vi.mock("./web-api", () => ({
-	orgCustomDomainClient: {},
-	protectedHeaders: vi.fn(),
 }));
 
 import {
@@ -231,7 +225,6 @@ type PausedCamera = {
 type PausedCameraId = { DeviceID: string } | { ModelID: string } | null;
 type PausedOptions = { micName: string | null; cameraID: PausedCameraId };
 type PausedMutations = {
-	updateMicInput: { mutateAsync(name: string | null): Promise<void> };
 	updateCameraInput: {
 		mutateAsync(camera: PausedCamera | null): Promise<void>;
 	};
@@ -254,7 +247,6 @@ const pausedComponent = pausedRoute.statements.find(
 );
 const pausedMutationNames = new Set([
 	"pauseRecordingForDeviceChange",
-	"updateMicInput",
 	"updateCameraInput",
 ]);
 const pausedStatements = pausedComponent?.body?.statements.filter(
@@ -266,7 +258,7 @@ const pausedStatements = pausedComponent?.body?.statements.filter(
 				pausedMutationNames.has(declaration.name.text),
 		),
 );
-if (pausedStatements?.length !== 3) {
+if (pausedStatements?.length !== 2) {
 	throw new Error("Paused device mutation source was not found");
 }
 const pausedHelpers = pausedRoute.statements.filter(
@@ -295,7 +287,7 @@ const createPausedMutations = new Function(
 	"getCameraWindow",
 	"refreshCameraWindowState",
 	"reconcile",
-	`${pausedMutationCode}\nreturn { updateMicInput, updateCameraInput };`,
+	`${pausedMutationCode}\nreturn { updateCameraInput };`,
 ) as (...args: unknown[]) => PausedMutations;
 
 const pausedStore =
@@ -352,53 +344,6 @@ const pausedCamera = (
 });
 
 describe("paused recording requested inputs", () => {
-	it("keeps failed microphone B visible and sends an explicit A retry", async () => {
-		const controls = pausedControls();
-		controls.commands.setMicInput.mockRejectedValueOnce(new Error("B failed"));
-		await expect(controls.updateMicInput.mutateAsync("B")).rejects.toThrow(
-			"B failed",
-		);
-		expect(controls.options.micName).toBe("B");
-		await controls.updateMicInput.mutateAsync("A");
-		expect(controls.commands.setMicInput.mock.calls).toEqual([["B"], ["A"]]);
-		expect(controls.options.micName).toBe("A");
-	});
-
-	it("retries the selected microphone including a failed None request", async () => {
-		const controls = pausedControls();
-		await controls.updateMicInput.mutateAsync("A");
-		controls.commands.setMicInput.mockRejectedValueOnce(
-			new Error("None failed"),
-		);
-		await expect(controls.updateMicInput.mutateAsync(null)).rejects.toThrow(
-			"None failed",
-		);
-		expect(controls.options.micName).toBeNull();
-		await controls.updateMicInput.mutateAsync(null);
-		expect(controls.commands.setMicInput.mock.calls).toEqual([
-			["A"],
-			[null],
-			[null],
-		]);
-	});
-
-	it("does not overwrite or report an older failed microphone after a later choice", async () => {
-		const controls = pausedControls();
-		let rejectOld: (error: Error) => void = () => {};
-		controls.commands.setMicInput.mockImplementationOnce(
-			() =>
-				new Promise<void>((_, reject) => {
-					rejectOld = reject;
-				}),
-		);
-		const old = controls.updateMicInput.mutateAsync("B");
-		await Promise.resolve();
-		await controls.updateMicInput.mutateAsync(null);
-		rejectOld(new Error("B failed late"));
-		await old;
-		expect(controls.options.micName).toBeNull();
-	});
-
 	it("keeps failed camera B visible and sends an explicit A retry", async () => {
 		const controls = pausedControls();
 		controls.commands.setCameraInput.mockRejectedValueOnce(
@@ -463,18 +408,11 @@ describe("paused recording requested inputs", () => {
 
 	it("ignores backend supersession without erasing either current request", async () => {
 		const controls = pausedControls();
-		controls.commands.setMicInput.mockRejectedValueOnce(
-			"Microphone selection was superseded by a newer request",
-		);
 		controls.commands.setCameraInput.mockRejectedValueOnce(
 			"Camera selection was superseded by a newer request",
 		);
-		await controls.updateMicInput.mutateAsync("B");
 		await controls.updateCameraInput.mutateAsync(pausedCamera("B"));
-		expect(controls.options).toEqual({
-			micName: "B",
-			cameraID: { DeviceID: "B" },
-		});
+		expect(controls.options.cameraID).toEqual({ DeviceID: "B" });
 	});
 
 	it("does not change requested inputs when acknowledged Pause fails", async () => {
@@ -483,17 +421,10 @@ describe("paused recording requested inputs", () => {
 		controls.commands.pauseRecording.mockRejectedValue(
 			new Error("Pause failed"),
 		);
-		await expect(controls.updateMicInput.mutateAsync("B")).rejects.toThrow(
-			"Pause failed",
-		);
 		await expect(
 			controls.updateCameraInput.mutateAsync(pausedCamera("B")),
 		).rejects.toThrow("Pause failed");
-		expect(controls.options).toEqual({
-			micName: "A",
-			cameraID: { DeviceID: "A" },
-		});
-		expect(controls.commands.setMicInput).not.toHaveBeenCalled();
+		expect(controls.options.cameraID).toEqual({ DeviceID: "A" });
 		expect(controls.commands.setCameraInput).not.toHaveBeenCalled();
 	});
 
@@ -507,12 +438,12 @@ describe("paused recording requested inputs", () => {
 					paused = resolve;
 				}),
 		);
-		const request = controls.updateMicInput.mutateAsync("B");
-		expect(controls.options.micName).toBe("A");
-		expect(controls.commands.setMicInput).not.toHaveBeenCalled();
+		const request = controls.updateCameraInput.mutateAsync(pausedCamera("B"));
+		expect(controls.options.cameraID).toEqual({ DeviceID: "A" });
+		expect(controls.commands.setCameraInput).not.toHaveBeenCalled();
 		paused();
 		await request;
-		expect(controls.options.micName).toBe("B");
+		expect(controls.options.cameraID).toEqual({ DeviceID: "B" });
 		expect(controls.state.variant).toBe("recording");
 	});
 

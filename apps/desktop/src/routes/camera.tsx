@@ -1004,7 +1004,7 @@ function LegacyCameraPreviewPage(props: {
 					state.backgroundBlur === "remove"
 						? "rounded-none"
 						: state.shape === "round"
-							? "rounded-full"
+							? "rounded-sm"
 							: "rounded-3xl",
 				)}
 				data-tauri-drag-region

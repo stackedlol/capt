@@ -148,9 +148,6 @@ async fn init_gpu_inner() -> Option<SharedGpuContext> {
 
     let health = crate::gpu_device_health::GpuDeviceHealth::track(&device, |reason, message| {
         tracing::error!(?reason, %message, "Shared GPU device lost");
-        if reason == wgpu::DeviceLostReason::Unknown {
-            sentry::capture_message("Shared GPU device lost", sentry::Level::Error);
-        }
     });
 
     Some(SharedGpuContext {

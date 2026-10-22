@@ -118,7 +118,7 @@ function PreparingPlayer(props: { model: PreparingEditorModel }) {
 						type="button"
 						aria-label={props.model.playback().playing ? "Pause" : "Play"}
 						disabled={!props.model.canPlay()}
-						class="flex items-center justify-center size-8 rounded-full bg-ed-ctl-hover text-ed-text-1 disabled:opacity-40"
+						class="flex items-center justify-center size-8 rounded-sm bg-ed-ctl-hover text-ed-text-1 disabled:opacity-40"
 						onClick={() =>
 							void props.model.setPlaying(!props.model.playback().playing)
 						}
@@ -178,7 +178,7 @@ function PreparingSidebar() {
 					{(name) => (
 						<div class="flex items-center justify-between h-[34px] text-[12px] text-ed-text-3">
 							<span>{name}</span>
-							<span class="h-1 w-24 rounded-full bg-ed-ctl-hover" />
+							<span class="h-1 w-24 rounded-[1px] bg-ed-ctl-hover" />
 						</div>
 					)}
 				</For>

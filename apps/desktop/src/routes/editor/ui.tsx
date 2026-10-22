@@ -70,7 +70,7 @@ function FieldLabel(props: {
 			{props.name}
 			<Show when={props.badge}>
 				{(badge) => (
-					<span class="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-ed-ctl text-ed-text-2">
+					<span class="px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-ed-ctl text-ed-text-2">
 						{badge()}
 					</span>
 				)}
@@ -142,9 +142,7 @@ export function Subfield(
 		>
 			<span class="text-[13px] font-normal text-ed-text-1">
 				{props.name}
-				{props.required && (
-					<span class="ml-[2px] text-xs text-blue-500">*</span>
-				)}
+				{props.required && <span class="ml-[2px] text-xs text-blue-9">*</span>}
 			</span>
 			{props.children}
 		</div>
@@ -204,7 +202,7 @@ export function Slider(
 			}}
 		>
 			<KSlider.Track
-				class="h-[3px] transition-[height] relative mx-1 bg-ed-ctl-active rounded-full w-full before:content-[''] before:absolute before:inset-0 before:-top-3 before:-bottom-3"
+				class="h-[3px] transition-[height] relative mx-1 bg-ed-ctl-active rounded-[1px] w-full before:content-[''] before:absolute before:inset-0 before:-top-3 before:-bottom-3"
 				onPointerDown={() => {
 					setDragging(true);
 					createRoot((dispose) => {
@@ -215,7 +213,7 @@ export function Slider(
 					});
 				}}
 			>
-				<KSlider.Fill class="absolute -ml-2 h-full rounded-full bg-ed-accent data-disabled:bg-ed-ctl-active" />
+				<KSlider.Fill class="absolute -ml-2 h-full rounded-sm bg-ed-accent data-disabled:bg-ed-ctl-active" />
 				<Tooltip
 					open={dragging() ? true : undefined}
 					getAnchorRect={() => {
@@ -245,7 +243,7 @@ export function Slider(
 							setDragging(false);
 						}}
 						class={cx(
-							"bg-ed-thumb rounded-full outline-hidden size-3.5 -top-[5.5px] shadow-[0_1px_3px_rgba(0,0,0,.25),0_0_0_.5px_rgba(0,0,0,.1)] data-disabled:opacity-50 after:content-[''] after:absolute after:inset-0 after:-m-3",
+							"bg-ed-thumb rounded-sm outline-hidden size-3.5 -top-[5.5px] shadow-[0_1px_3px_rgba(0,0,0,.25),0_0_0_.5px_rgba(0,0,0,.1)] data-disabled:opacity-50 after:content-[''] after:absolute after:inset-0 after:-m-3",
 							local.thumbClass,
 						)}
 					/>

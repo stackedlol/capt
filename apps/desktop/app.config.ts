@@ -42,6 +42,15 @@ export default defineConfig({
 			watch: {
 				ignored: ["**/src-tauri/**"],
 			},
+			// Transform the main window's module graph while `tauri dev` is still
+			// compiling Rust, so the first window load is served from cache.
+			warmup: {
+				clientFiles: [
+					"./src/entry-client.tsx",
+					"./src/routes/*.tsx",
+					"./src/routes/*/new-main/index.tsx",
+				],
+			},
 			headers: {
 				"Cross-Origin-Opener-Policy": "same-origin",
 				"Cross-Origin-Embedder-Policy": "require-corp",

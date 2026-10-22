@@ -1,17 +1,12 @@
 import { Button } from "@cap/ui-solid";
-import { useNavigate } from "@solidjs/router";
 import {
 	createMutation,
 	queryOptions,
 	useQuery,
 	useQueryClient,
 } from "@tanstack/solid-query";
-import { Channel } from "@tauri-apps/api/core";
-import { emit, listen } from "@tauri-apps/api/event";
-import {
-	getAllWebviewWindows,
-	WebviewWindow,
-} from "@tauri-apps/api/webviewWindow";
+import { emit } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
 	currentMonitor,
 	getCurrentWindow,
@@ -19,40 +14,30 @@ import {
 	PhysicalPosition,
 } from "@tauri-apps/api/window";
 import * as dialog from "@tauri-apps/plugin-dialog";
-import * as shell from "@tauri-apps/plugin-shell";
 import { cx } from "cva";
 import {
 	createEffect,
 	createMemo,
 	createSignal,
-	ErrorBoundary,
 	For,
 	on,
 	onCleanup,
 	onMount,
 	Show,
-	Suspense,
 } from "solid-js";
-import { createStore, produce, reconcile } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import toast from "solid-toast";
 import { Transition } from "solid-transition-group";
-import Mode from "~/components/Mode";
 import { RecoveryToast } from "~/components/RecoveryToast";
 import Tooltip from "~/components/Tooltip";
 import { Input } from "~/routes/editor/ui";
-import {
-	authStore,
-	generalSettingsStore,
-	recordingSettingsStore,
-} from "~/store";
-import { createSignInMutation } from "~/utils/auth";
+import { generalSettingsStore, recordingSettingsStore } from "~/store";
 import { createTauriEventListener } from "~/utils/createEventListener";
 import {
 	type CameraWithDetails,
 	createStableDevicesQuery,
 	type MicrophoneWithDetails,
 } from "~/utils/devices";
-import { clientEnv } from "~/utils/env";
 import { hideCurrentWindow } from "~/utils/hide-window";
 import {
 	importImageFromPicker,
@@ -63,7 +48,6 @@ import {
 	createCameraMutation,
 	createCleanCaptureQuery,
 	createCurrentRecordingQuery,
-	createLicenseQuery,
 	createMicrophoneMutation,
 	getEditorRecordingTarget,
 	getPermissions,
@@ -76,6 +60,7 @@ import {
 } from "~/utils/queries";
 import {
 	isRecordingStartCancelled,
+	openRecordingFolder,
 	recordingMetaNeedsRecovery,
 	recordingOpenErrorMessage,
 	runRecordingStopRequest,
@@ -91,44 +76,34 @@ import {
 	type OSPermissionsCheck,
 	type RecordingTargetMode,
 	type ScreenCaptureTarget,
-	type UpdateCheckResult,
-	type UploadProgress,
 } from "~/utils/tauri";
 import { openTeleprompter } from "~/utils/teleprompter";
-import { restartAfterUpdate } from "~/utils/updater";
-import IconCapLogoFull from "~icons/cap/logo-full";
-import IconCapLogoFullDark from "~icons/cap/logo-full-dark";
-import IconLucideAppWindowMac from "~icons/lucide/app-window-mac";
 import IconLucideArrowLeft from "~icons/lucide/arrow-left";
 import IconLucideBug from "~icons/lucide/bug";
-import IconLucideCircleHelp from "~icons/lucide/circle-help";
 import IconLucideImage from "~icons/lucide/image";
 import IconLucideImport from "~icons/lucide/import";
 import IconLucideScanText from "~icons/lucide/scan-text";
 import IconLucideSearch from "~icons/lucide/search";
 import IconLucideSettings from "~icons/lucide/settings";
 import IconLucideSquarePlay from "~icons/lucide/square-play";
-import IconLucideVideo from "~icons/lucide/video";
-import IconMaterialSymbolsScreenshotFrame2Rounded from "~icons/material-symbols/screenshot-frame-2-rounded";
-import IconMdiMonitor from "~icons/mdi/monitor";
 import { WindowChromeHeader } from "../Context";
 import {
 	RecordingOptionsProvider,
 	useRecordingOptions,
 } from "../OptionsContext";
-import CameraSelect from "./CameraSelect";
-import ChangelogButton from "./ChangeLogButton";
-import MicrophoneSelect from "./MicrophoneSelect";
+import ControlIsland from "./ControlIsland";
 import ModeInfoPanel from "./ModeInfoPanel";
-import SystemAudio from "./SystemAudio";
+import PerformanceStrip from "./PerformanceStrip";
+import RadialCaptureMenu, {
+	type CaptureAction,
+	type CaptureTarget,
+} from "./RadialCaptureMenu";
 import type { RecordingWithPath, ScreenshotWithPath } from "./TargetCard";
-import TargetDropdownButton from "./TargetDropdownButton";
 import TargetMenuGrid from "./TargetMenuGrid";
-import TargetTypeButton from "./TargetTypeButton";
 import useRequestPermission from "./useRequestPermission";
 import { getPostResizeWindowPosition } from "./window-geometry";
 
-const MAIN_WINDOW_SIZE = { width: 330, height: 395 } as const;
+const MAIN_WINDOW_SIZE = { width: 330, height: 450 } as const;
 const MAIN_WINDOW_SCREEN_PADDING = 12;
 const CAPTURE_LIST_STALE_TIME = 5_000;
 const CAPTURE_LIST_GC_TIME = 60_000;
@@ -350,9 +325,6 @@ type TargetMenuPanelProps =
 			targets?: RecordingWithPath[];
 			onSelect: (target: RecordingWithPath) => void;
 			onViewAll: () => void;
-			uploadProgress?: Record<string, number>;
-			reuploadingPaths?: Set<string>;
-			onReupload?: (path: string) => void;
 			onRefetch?: () => void;
 	  }
 	| {
@@ -859,28 +831,16 @@ function MicrophoneSettingsPanel(props: {
 }
 
 function DeviceListPanel(props: DeviceListPanelProps) {
-	const DB_SCALE = 40;
 	const requestPermission = useRequestPermission();
 	const [focusedIndex, setFocusedIndex] = createSignal(-1);
-	const [dbs, setDbs] = createSignal<number | undefined>();
 	const itemRefs: HTMLButtonElement[] = [];
 	let containerRef: HTMLDivElement | undefined;
 
-	createTauriEventListener(events.audioInputLevelChange, (d) => {
-		if (props.variant !== "microphone" || props.selectedTarget === null) {
-			setDbs();
-		} else {
-			setDbs(d);
-		}
-	});
+	// The camera list has no "No Camera" row (the On/Off pill turns the camera
+	// off), so device rows start at index 0 there and at 1 for microphones.
+	const noneOffset = () => (props.variant === "camera" ? 0 : 1);
 
-	const audioLevel = () => {
-		const d = dbs();
-		if (d === undefined) return undefined;
-		return (1 - Math.max(d + DB_SCALE, 0) / DB_SCALE) ** 0.5;
-	};
-
-	const totalItems = () => props.targets.length + 1;
+	const totalItems = () => props.targets.length + noneOffset();
 
 	const getInitialFocusIndex = () => {
 		if (props.selectedTarget === null) return 0;
@@ -889,13 +849,13 @@ function DeviceListPanel(props: DeviceListPanelProps) {
 			const idx = (props.targets as CameraWithDetails[]).findIndex(
 				(c) => c.device_id === target.device_id,
 			);
-			return idx >= 0 ? idx + 1 : 0;
+			return idx >= 0 ? idx + noneOffset() : 0;
 		}
 		const target = props.selectedTarget as MicrophoneWithDetails;
 		const idx = (props.targets as MicrophoneWithDetails[]).findIndex(
 			(m) => m.name === target.name,
 		);
-		return idx >= 0 ? idx + 1 : 0;
+		return idx >= 0 ? idx + noneOffset() : 0;
 	};
 
 	onMount(() => {
@@ -964,10 +924,11 @@ function DeviceListPanel(props: DeviceListPanelProps) {
 			case "Enter": {
 				e.preventDefault();
 				const idx = focusedIndex();
-				if (idx === 0) {
+				const targetIdx = idx - noneOffset();
+				if (targetIdx === -1) {
 					handleSelect(null);
-				} else if (idx > 0 && idx <= props.targets.length) {
-					handleSelect(props.targets[idx - 1]);
+				} else if (targetIdx >= 0 && targetIdx < props.targets.length) {
+					handleSelect(props.targets[targetIdx]);
 				}
 				break;
 			}
@@ -1027,31 +988,31 @@ function DeviceListPanel(props: DeviceListPanelProps) {
 				<div class="py-6 text-sm text-center text-gray-11">Loading...</div>
 			</Show>
 			<Show when={!props.isLoading && !props.errorMessage}>
-				<button
-					ref={(el) => {
-						itemRefs[0] = el;
-					}}
-					type="button"
-					disabled={props.disabled}
-					onClick={() => handleSelect(null)}
-					class={cx(
-						"flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left outline-hidden transition-colors",
-						isNoneSelected()
-							? "bg-blue-500 text-white"
-							: focusedIndex() === 0
-								? "bg-gray-5 text-gray-12"
-								: "hover:bg-gray-4 text-gray-12",
-						props.disabled && "opacity-50 cursor-not-allowed",
-					)}
-				>
-					<IconLucideCircleOff class="size-4 shrink-0" />
-					<span class="truncate flex-1">
-						{props.variant === "camera" ? "No Camera" : "No Microphone"}
-					</span>
-					<Show when={isNoneSelected()}>
-						<IconLucideCheck class="size-4 shrink-0" />
-					</Show>
-				</button>
+				<Show when={props.variant === "microphone"}>
+					<button
+						ref={(el) => {
+							itemRefs[0] = el;
+						}}
+						type="button"
+						disabled={props.disabled}
+						onClick={() => handleSelect(null)}
+						class={cx(
+							"flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left outline-hidden transition-colors",
+							isNoneSelected()
+								? "bg-blue-500 text-white"
+								: focusedIndex() === 0
+									? "bg-gray-5 text-gray-12"
+									: "hover:bg-gray-4 text-gray-12",
+							props.disabled && "opacity-50 cursor-not-allowed",
+						)}
+					>
+						<IconLucideCircleOff class="size-4 shrink-0" />
+						<span class="truncate flex-1">No Microphone</span>
+						<Show when={isNoneSelected()}>
+							<IconLucideCheck class="size-4 shrink-0" />
+						</Show>
+					</button>
+				</Show>
 
 				<Show when={props.targets.length === 0}>
 					<div class="py-4 text-sm text-center text-gray-11">
@@ -1064,11 +1025,11 @@ function DeviceListPanel(props: DeviceListPanelProps) {
 						{(camera, index) => (
 							<CameraListItem
 								ref={(el) => {
-									itemRefs[index() + 1] = el;
+									itemRefs[index()] = el;
 								}}
 								camera={camera}
 								isSelected={isCameraSelected(camera)}
-								isFocused={focusedIndex() === index() + 1}
+								isFocused={focusedIndex() === index()}
 								disabled={props.disabled}
 								onSelect={() => handleSelect(camera)}
 								onSettings={() => {
@@ -1101,7 +1062,6 @@ function DeviceListPanel(props: DeviceListPanelProps) {
 									if (props.variant !== "microphone") return;
 									props.onSettingsRequested(mic);
 								}}
-								audioLevel={isMicSelected(mic) ? audioLevel() : undefined}
 								settingsLabel={
 									microphoneSettingFor(mic)
 										? formatMicrophoneSetting(microphoneSettingFor(mic) ?? {})
@@ -1622,9 +1582,6 @@ function TargetMenuPanel(props: TargetMenuPanelProps & SharedTargetMenuProps) {
 							disabled={props.disabled}
 							highlightQuery={trimmedSearch()}
 							emptyMessage={trimmedSearch() ? noResultsMessage : undefined}
-							uploadProgress={props.uploadProgress}
-							reuploadingPaths={props.reuploadingPaths}
-							onReupload={props.onReupload}
 							onRefetch={props.onRefetch}
 							onViewAll={props.onViewAll}
 						/>
@@ -1659,126 +1616,13 @@ export default function () {
 	);
 }
 
-let hasChecked = false;
-const [installingUpdate, setInstallingUpdate] = createSignal(false);
-function createUpdateCheck() {
-	if (import.meta.env.DEV) return;
-
-	const navigate = useNavigate();
-
-	onMount(async () => {
-		if (hasChecked) return;
-		hasChecked = true;
-
-		await new Promise((res) => setTimeout(res, 10_000));
-
-		// The Rust background loop owns nightly updates.
-		const settings = await generalSettingsStore.get();
-		if (settings?.updateChannel === "nightly") return;
-
-		let update: UpdateCheckResult | null = null;
-		try {
-			update = await commands.updatesCheck();
-		} catch (e) {
-			console.error("Failed to check for updates:", e);
-			return;
-		}
-
-		if (!update) return;
-
-		let shouldUpdate: boolean | undefined;
-		try {
-			shouldUpdate = await dialog.confirm(
-				`Version ${update.version} of Cap is available, would you like to install it?`,
-				{ title: "Update Cap", okLabel: "Update", cancelLabel: "Ignore" },
-			);
-		} catch (e) {
-			console.error("Failed to show update dialog:", e);
-			return;
-		}
-
-		if (!shouldUpdate) return;
-		navigate("/update");
-	});
-}
-
-function createUpdateReadyToast() {
-	createTauriEventListener(events.updateReady, (update) => {
-		toast.custom(
-			(t) => (
-				// The main window is only 330px wide, so the toast must fit inside it
-				// (never exceed the viewport) and stack its actions below the message
-				// rather than racing them on one line — otherwise the card overflows
-				// the window edge and gets clipped.
-				<div class="flex flex-col gap-2.5 px-4 py-3 rounded-xl border shadow-lg bg-gray-1 border-gray-4 text-gray-12 w-[min(24rem,calc(100vw-2rem))]">
-					<p class="text-sm">
-						{update.installed
-							? `Cap ${update.version} has been installed — restart to apply`
-							: `Cap ${update.version} is ready to install`}
-					</p>
-					<div class="flex gap-2 items-center">
-						<button
-							type="button"
-							disabled={installingUpdate()}
-							class="px-2.5 py-1 text-xs font-medium rounded-lg transition-colors bg-blue-9 text-white hover:bg-blue-10 disabled:cursor-not-allowed disabled:opacity-60"
-							onClick={() => {
-								if (installingUpdate()) return;
-								setInstallingUpdate(true);
-								restartAfterUpdate()
-									.catch((error) => {
-										console.error("Failed to install update:", error);
-										toast.error(
-											typeof error === "string"
-												? error
-												: "Unable to restart Cap safely.",
-										);
-									})
-									.finally(() => setInstallingUpdate(false));
-							}}
-						>
-							{update.installed ? "Restart now" : "Install and restart"}
-						</button>
-						<button
-							type="button"
-							class="px-2.5 py-1 text-xs font-medium rounded-lg transition-colors text-gray-11 hover:text-gray-12"
-							onClick={() => toast.dismiss(t.id)}
-						>
-							Dismiss
-						</button>
-					</div>
-				</div>
-			),
-			{
-				// One toast per version: re-emissions replace instead of stacking.
-				id: `update-ready-${update.version}`,
-				duration: Number.POSITIVE_INFINITY,
-			},
-		);
-	});
-}
-
-function MainWindowHelpButton() {
-	return (
-		<Tooltip content={<span>Help & Tour</span>}>
-			<button
-				type="button"
-				onClick={() => {
-					commands.showWindow("Onboarding");
-				}}
-				class="flex shrink-0 justify-center items-center size-5 focus:outline-hidden"
-			>
-				<IconLucideCircleHelp class="transition-colors text-gray-11 size-4 hover:text-gray-12" />
-			</button>
-		</Tooltip>
-	);
-}
-
 function Page() {
 	const queryClient = useQueryClient();
 	const { rawOptions, setOptions, getCameraRevision } = useRecordingOptions();
 	const currentRecording = createCurrentRecordingQuery();
 	const cleanCapture = createCleanCaptureQuery();
 	const editorRecordingTarget = useQuery(() => getEditorRecordingTarget);
+
 	createTauriEventListener(events.editorRecordingFlowChanged, (payload) => {
 		queryClient.setQueryData(getEditorRecordingTarget.queryKey, payload.target);
 	});
@@ -1846,12 +1690,8 @@ function Page() {
 	const isRecording = () => !!currentRecording.data;
 	const isActivelyRecording = () =>
 		currentRecording.data?.status === "recording";
-	const auth = authStore.createQuery();
 	const recordingSettingsQuery = recordingDeviceSettingsStore.createQuery();
 	const generalSettings = generalSettingsStore.createQuery();
-	const serverUrl = createMemo(
-		() => generalSettings.data?.serverUrl ?? clientEnv.VITE_SERVER_URL,
-	);
 	const deviceSettings = createMemo(
 		() => recordingSettingsQuery.data as RecordingDeviceSettingsStore | null,
 	);
@@ -2097,27 +1937,6 @@ function Page() {
 		enabled: recordingsMenuOpen(),
 	}));
 
-	const [uploadProgress, setUploadProgress] = createStore<
-		Record<string, number>
-	>({});
-	const [reuploadingPaths, setReuploadingPaths] = createSignal<Set<string>>(
-		new Set(),
-	);
-
-	createTauriEventListener(events.uploadProgressEvent, (e) => {
-		if (e.uploaded === "0" && e.total === "0") {
-			setUploadProgress(
-				produce((s) => {
-					delete s[e.video_id];
-				}),
-			);
-		} else {
-			const total = Number(e.total);
-			const progress = total > 0 ? (Number(e.uploaded) / total) * 100 : 0;
-			setUploadProgress(e.video_id, progress);
-		}
-	});
-
 	// Start failures happen before the in-progress window exists, and the picker
 	// overlay that invoked start_recording may already be dismissed — this window
 	// is the only reliable surface for telling the user why nothing started. The
@@ -2131,25 +1950,6 @@ function Page() {
 			if (!isRecordingStartCancelled(payload.error)) toast.error(payload.error);
 		}
 	});
-
-	const handleReupload = async (path: string) => {
-		setReuploadingPaths((prev) => new Set([...prev, path]));
-		try {
-			await commands.uploadExportedVideo(
-				path,
-				"Reupload",
-				new Channel<UploadProgress>(() => {}),
-				null,
-			);
-		} finally {
-			setReuploadingPaths((prev) => {
-				const next = new Set(prev);
-				next.delete(path);
-				return next;
-			});
-			refreshRecordings();
-		}
-	};
 
 	const screenshots = useQuery(() => ({
 		...listScreenshotsQuery,
@@ -2353,9 +2153,6 @@ function Page() {
 		cameraRestoreDisposed = true;
 	});
 
-	createUpdateCheck();
-	createUpdateReadyToast();
-
 	onMount(async () => {
 		if (document.activeElement instanceof HTMLElement) {
 			document.activeElement.blur();
@@ -2454,8 +2251,6 @@ function Page() {
 				}
 			},
 		);
-
-		commands.updateAuthPlan();
 
 		onCleanup(async () => {
 			(await unlistenFocus)?.();
@@ -2703,9 +2498,6 @@ function Page() {
 		}
 	});
 
-	const license = createLicenseQuery();
-
-	const signIn = createSignInMutation();
 	const stopRecording = createMutation(() => ({
 		mutationFn: async () => {
 			if (stopRequested()) return;
@@ -2728,42 +2520,6 @@ function Page() {
 			});
 		},
 	}));
-
-	const openCameraMenu = (
-		initialSettings: CameraWithDetails | null,
-		openSettingsWhenReady = false,
-	) => {
-		setEnableDeviceQueries(true);
-		setCameraInitialSettings(initialSettings);
-		setOpenCameraSettingsWhenReady(
-			openSettingsWhenReady && initialSettings === null,
-		);
-		setCameraMenuOpen(true);
-		setDisplayMenuOpen(false);
-		setWindowMenuOpen(false);
-		setRecordingsMenuOpen(false);
-		setScreenshotsMenuOpen(false);
-		setModeInfoMenuOpen(false);
-		setMicrophoneMenuOpen(false);
-	};
-
-	const openMicrophoneMenu = (
-		initialSettings: MicrophoneWithDetails | null,
-		openSettingsWhenReady = false,
-	) => {
-		setEnableDeviceQueries(true);
-		setMicrophoneInitialSettings(initialSettings);
-		setOpenMicrophoneSettingsWhenReady(
-			openSettingsWhenReady && initialSettings === null,
-		);
-		setMicrophoneMenuOpen(true);
-		setDisplayMenuOpen(false);
-		setWindowMenuOpen(false);
-		setRecordingsMenuOpen(false);
-		setScreenshotsMenuOpen(false);
-		setModeInfoMenuOpen(false);
-		setCameraMenuOpen(false);
-	};
 
 	const openRecording = async (recording: RecordingWithPath) => {
 		if (recording.mode === "studio") {
@@ -2793,12 +2549,7 @@ function Page() {
 				Editor: { project_path: projectPath },
 			});
 		} else {
-			const link = recording.sharing?.link;
-			if (!link) {
-				toast.error("This recording isn't ready to open yet.");
-				return;
-			}
-			await shell.open(link);
+			await openRecordingFolder(recording.path, recording.mode);
 		}
 
 		await hideCurrentWindow();
@@ -2810,63 +2561,23 @@ function Page() {
 		});
 	};
 
-	const BaseControls = () => (
-		<div class="space-y-2">
-			<div>
-				<CameraSelect
-					disabled={enableDeviceQueries() && devices.isPending}
-					options={devices.cameras}
-					value={options.camera() ?? null}
-					selectedLabel={rawOptions.cameraLabel}
-					isSelected={rawOptions.cameraID != null}
-					disconnected={options.cameraDisconnected()}
-					onChange={(c) => {
-						if (!c) {
-							setOptions("cameraLabel", null);
-							setCamera.mutate({ model: null });
-						} else if (c.model_id) {
-							setOptions("cameraLabel", c.display_name);
-							setCamera.mutate({ model: { ModelID: c.model_id } });
-						} else {
-							setOptions("cameraLabel", c.display_name);
-							setCamera.mutate({ model: { DeviceID: c.device_id } });
-						}
-					}}
-					permissions={currentPermissions()}
-					onOpen={() => openCameraMenu(null)}
-					onOpenSettings={() =>
-						openCameraMenu(
-							options.camera() ?? null,
-							rawOptions.cameraID != null,
-						)
-					}
-				/>
-			</div>
-			<div>
-				<MicrophoneSelect
-					disabled={enableDeviceQueries() && devices.isPending}
-					options={devices.microphones.map((m) => m.name)}
-					value={rawOptions.micName ?? null}
-					disconnected={options.micDisconnected()}
-					onChange={(v) => setMicInput.mutate(v)}
-					permissions={currentPermissions()}
-					onOpen={() => openMicrophoneMenu(null)}
-					onOpenSettings={
-						rawOptions.micName
-							? () =>
-									openMicrophoneMenu(
-										options.micName() ?? null,
-										rawOptions.micName != null,
-									)
-							: undefined
-					}
-				/>
-			</div>
-			<div>
-				<SystemAudio />
-			</div>
-		</div>
-	);
+	const selectCapture = async (
+		action: CaptureAction,
+		target: CaptureTarget,
+	) => {
+		if (isRecording()) return;
+		if (rawOptions.mode !== action) {
+			setOptions({ mode: action });
+			await commands.setRecordingMode(action);
+			if (rawOptions.targetMode === target) return;
+		}
+		await toggleTargetMode(target);
+	};
+
+	const activeCaptureTarget = (): CaptureTarget | null =>
+		rawOptions.targetMode === "display" || rawOptions.targetMode === "area"
+			? rawOptions.targetMode
+			: null;
 
 	const TargetSelectionHome = () => (
 		<Transition
@@ -2878,136 +2589,21 @@ function Page() {
 			exitClass="scale-100"
 			exitToClass="scale-95"
 		>
-			<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1 w-full">
-				<div class="flex flex-col gap-2 w-full text-xs text-gray-11">
-					<div class="flex flex-row gap-2 items-stretch w-full">
-						<div
-							class={cx(
-								"flex flex-1 overflow-hidden rounded-lg border border-gray-6 bg-gray-2 ring-1 ring-transparent ring-offset-1 ring-offset-gray-1 transition-[background-color,border-color] focus-within:ring-blue-9 focus-within:ring-offset-1 focus-within:ring-offset-gray-1",
-								rawOptions.targetMode === "display" || displayMenuOpen()
-									? "border-blue-8 bg-blue-3 ring-blue-8 hover:border-blue-9 hover:bg-blue-4 dark:bg-blue-3/30 dark:hover:bg-blue-4/40"
-									: "hover:border-gray-8 hover:bg-gray-3",
-							)}
-						>
-							<TargetTypeButton
-								selected={rawOptions.targetMode === "display"}
-								Component={IconMdiMonitor}
-								disabled={isRecording()}
-								onClick={() => {
-									toggleTargetMode("display");
-								}}
-								name="Display"
-								class="flex-1 rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 pl-5"
-							/>
-							<TargetDropdownButton
-								class={cx(
-									"rounded-none border-l border-gray-6 focus-visible:ring-0 focus-visible:ring-offset-0",
-									displayMenuOpen() && "bg-gray-5",
-								)}
-								ref={displayTriggerRef}
-								disabled={isRecording()}
-								expanded={displayMenuOpen()}
-								onClick={() => {
-									setDisplayMenuOpen((prev) => {
-										const next = !prev;
-										if (next) {
-											setWindowMenuOpen(false);
-										}
-										return next;
-									});
-								}}
-								aria-haspopup="menu"
-								aria-label="Choose display"
-							/>
-						</div>
-						<div
-							class={cx(
-								"flex flex-1 overflow-hidden rounded-lg border border-gray-6 bg-gray-2 ring-1 ring-transparent ring-offset-1 ring-offset-gray-1 transition-[background-color,border-color] focus-within:ring-blue-9 focus-within:ring-offset-1 focus-within:ring-offset-gray-1",
-								rawOptions.targetMode === "window" || windowMenuOpen()
-									? "border-blue-8 bg-blue-3 ring-blue-8 hover:border-blue-9 hover:bg-blue-4 dark:bg-blue-3/30 dark:hover:bg-blue-4/40"
-									: "hover:border-gray-8 hover:bg-gray-3",
-							)}
-						>
-							<TargetTypeButton
-								selected={rawOptions.targetMode === "window"}
-								Component={IconLucideAppWindowMac}
-								disabled={isRecording()}
-								onClick={() => {
-									toggleTargetMode("window");
-								}}
-								name="Window"
-								class="flex-1 rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 pl-5"
-							/>
-							<TargetDropdownButton
-								class={cx(
-									"rounded-none border-l border-gray-6 focus-visible:ring-0 focus-visible:ring-offset-0",
-									windowMenuOpen() && "bg-gray-5",
-								)}
-								ref={windowTriggerRef}
-								disabled={isRecording()}
-								expanded={windowMenuOpen()}
-								onClick={() => {
-									setWindowMenuOpen((prev) => {
-										const next = !prev;
-										if (next) {
-											setDisplayMenuOpen(false);
-										}
-										return next;
-									});
-								}}
-								aria-haspopup="menu"
-								aria-label="Choose window"
-							/>
-						</div>
-					</div>
-					<div class="flex flex-row gap-2 items-stretch w-full">
-						<TargetTypeButton
-							selected={rawOptions.targetMode === "area"}
-							Component={IconMaterialSymbolsScreenshotFrame2Rounded}
-							disabled={isRecording()}
-							onClick={() => {
-								toggleTargetMode("area");
-							}}
-							name="Area"
-							class="flex-1"
-						/>
-						<TargetTypeButton
-							selected={rawOptions.targetMode === "camera"}
-							Component={IconLucideVideo}
-							disabled={isRecording()}
-							onClick={() => {
-								toggleTargetMode("camera");
-							}}
-							name="Camera Only"
-							class="flex-1"
-						/>
-					</div>
-				</div>
-				<BaseControls />
+			<div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto pb-1 w-full">
+				<RadialCaptureMenu
+					activeAction={
+						activeCaptureTarget() &&
+						(rawOptions.mode === "studio" || rawOptions.mode === "screenshot")
+							? rawOptions.mode
+							: null
+					}
+					activeTarget={activeCaptureTarget()}
+					disabled={isRecording()}
+					onSelect={(action, target) => void selectCapture(action, target)}
+				/>
 			</div>
 		</Transition>
 	);
-
-	const startSignInCleanup = listen("start-sign-in", async () => {
-		const revealGeneration = (await commands.getCleanCaptureState()).generation;
-		const abort = new AbortController();
-		for (const win of await getAllWebviewWindows()) {
-			if (win.label.startsWith("target-select-overlay")) {
-				await win.setIgnoreCursorEvents(true);
-				await win.hide();
-			}
-		}
-
-		await signIn.mutateAsync(abort).catch(() => {});
-
-		for (const win of await getAllWebviewWindows()) {
-			if (win.label.startsWith("target-select-overlay")) {
-				await win.setIgnoreCursorEvents(false);
-				await commands.revealCaptureWindow(revealGeneration, win.label);
-			}
-		}
-	});
-	onCleanup(() => startSignInCleanup.then((cb) => cb()));
 
 	return (
 		<div
@@ -3052,8 +2648,12 @@ function Page() {
 					class="flex flex-1 gap-1 items-center mx-2 min-w-0"
 					data-tauri-drag-region
 				>
-					<MainWindowHelpButton />
-					<div class="flex-1 min-h-9 min-w-0" data-tauri-drag-region />
+					<div
+						class="flex flex-1 justify-center items-center min-h-9 min-w-0"
+						data-tauri-drag-region
+					>
+						<ControlIsland />
+					</div>
 					<div class="flex gap-1 items-center shrink-0" data-tauri-drag-region>
 						<Tooltip content={<span>Settings</span>}>
 							<button
@@ -3115,7 +2715,6 @@ function Page() {
 								<IconLucideScanText class="transition-colors text-gray-11 size-4 hover:text-gray-12" />
 							</button>
 						</Tooltip>
-						<ChangelogButton />
 						{import.meta.env.DEV && (
 							<button
 								type="button"
@@ -3139,250 +2738,171 @@ function Page() {
 					<For each={recordingErrors()}>{(error) => <p>{error}</p>}</For>
 				</div>
 			</Show>
-			<Show when={!activeMenu()}>
-				<div class="flex items-center justify-between mt-[16px] mb-[6px]">
-					<Show
-						when={editorRecordingFlow()}
-						fallback={
-							<div class="flex items-center space-x-1">
-								<a
-									class="*:w-[92px] *:h-auto text-(--text-primary)"
-									target="_blank"
-									href={
-										auth.data
-											? new URL("/dashboard", serverUrl()).toString()
-											: serverUrl()
-									}
+			<div class="flex flex-col items-center gap-2 mt-[16px] mb-[6px]">
+				<PerformanceStrip />
+				<Show when={!activeMenu() && editorRecordingFlow()}>
+					{(flow) => (
+						<div class="flex min-w-0 items-center justify-center gap-2.5 animate-in fade-in slide-in-from-left-1 duration-200">
+							<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-3 text-blue-10 dark:bg-blue-4">
+								<IconCapClapperboard class="size-4" />
+							</div>
+							<div class="flex min-w-0 flex-col leading-tight">
+								<span class="truncate text-[13px] font-medium text-gray-12">
+									Record a new clip
+								</span>
+								<span class="truncate text-[11px] text-gray-11">
+									Adds to {flow().projectName}
+								</span>
+							</div>
+							<Tooltip content={<span>Back to editor</span>}>
+								<button
+									type="button"
+									onClick={() => void cancelEditorRecordingFlow()}
+									aria-label="Back to editor"
+									class="flex size-6 shrink-0 items-center justify-center rounded-sm text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12 focus:outline-hidden"
 								>
-									<IconCapLogoFullDark class="hidden dark:block" />
-									<IconCapLogoFull class="block dark:hidden" />
-								</a>
-								<ErrorBoundary fallback={null}>
-									<Suspense>
-										<Show
-											when={license.data?.type !== "pro"}
-											fallback={
-												<span class="text-[0.6rem] ml-2 rounded-lg border border-gray-5 px-1 py-0.5 bg-(--blue-400) text-gray-1 dark:text-gray-12">
-													{license.data?.type === "commercial"
-														? "Commercial"
-														: "Pro"}
-												</span>
-											}
-										>
-											<button
-												type="button"
-												onClick={() => {
-													void commands.showWindow("Upgrade");
-												}}
-												class="text-[0.6rem] ml-2 rounded-lg border border-gray-5 px-1 py-0.5 bg-gray-3 hover:bg-gray-5"
-											>
-												Personal
-											</button>
-										</Show>
-									</Suspense>
-								</ErrorBoundary>
-							</div>
-						}
-					>
-						{(flow) => (
-							<div class="flex min-w-0 flex-1 items-center gap-2.5 pr-3 animate-in fade-in slide-in-from-left-1 duration-200">
-								<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-3 text-blue-10 dark:bg-blue-4">
-									<IconCapClapperboard class="size-4" />
-								</div>
-								<div class="flex min-w-0 flex-col leading-tight">
-									<span class="truncate text-[13px] font-medium text-gray-12">
-										Record a new clip
-									</span>
-									<span class="truncate text-[11px] text-gray-11">
-										Adds to {flow().projectName}
-									</span>
-								</div>
-								<Tooltip content={<span>Back to editor</span>}>
-									<button
-										type="button"
-										onClick={() => void cancelEditorRecordingFlow()}
-										aria-label="Back to editor"
-										class="flex size-6 shrink-0 items-center justify-center rounded-full text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12 focus:outline-hidden"
-									>
-										<IconCapX class="size-2.5" />
-									</button>
-								</Tooltip>
-							</div>
-						)}
-					</Show>
-					<Mode
-						locked={!!editorRecordingFlow()}
-						onInfoClick={() => {
-							if (editorRecordingFlow()) return;
-							setModeInfoMenuOpen(true);
-							setDisplayMenuOpen(false);
-							setWindowMenuOpen(false);
-							setRecordingsMenuOpen(false);
-							setScreenshotsMenuOpen(false);
-							setCameraMenuOpen(false);
-							setMicrophoneMenuOpen(false);
-						}}
-					/>
-				</div>
-			</Show>
-			<div class="flex-1 min-h-0 w-full flex flex-col">
-				<Show when={signIn.isPending}>
-					<div class="flex absolute inset-0 justify-center items-center bg-gray-1 animate-in fade-in">
-						<div class="flex flex-col gap-4 justify-center items-center">
-							<span>Signing In...</span>
-
-							<Button
-								onClick={() => {
-									signIn.variables?.abort();
-									signIn.reset();
-								}}
-								variant="gray"
-								class="w-full"
-							>
-								Cancel Sign In
-							</Button>
+									<IconCapX class="size-2.5" />
+								</button>
+							</Tooltip>
 						</div>
-					</div>
+					)}
 				</Show>
-				<Show when={!signIn.isPending}>
-					<Show when={activeMenu()} keyed fallback={<TargetSelectionHome />}>
-						{(variant) =>
-							variant === "display" ? (
-								<TargetMenuPanel
-									variant="display"
-									targets={displayTargetsData()}
-									isLoading={displayMenuLoading()}
-									errorMessage={displayErrorMessage()}
-									onSelect={selectDisplayTarget}
-									disabled={isRecording()}
-									onBack={() => {
-										setDisplayMenuOpen(false);
-										displayTriggerRef?.focus();
-									}}
-								/>
-							) : variant === "window" ? (
-								<TargetMenuPanel
-									variant="window"
-									targets={windowTargetsData()}
-									isLoading={windowMenuLoading()}
-									errorMessage={windowErrorMessage()}
-									onSelect={selectWindowTarget}
-									disabled={isRecording()}
-									onBack={() => {
-										setWindowMenuOpen(false);
-										windowTriggerRef?.focus();
-									}}
-								/>
-							) : variant === "recording" ? (
-								<TargetMenuPanel
-									variant="recording"
-									targets={recordingsData()}
-									isLoading={recordings.isPending}
-									errorMessage={
-										recordings.error ? "Failed to load recordings" : undefined
+			</div>
+			<div class="flex-1 min-h-0 w-full flex flex-col">
+				<Show when={activeMenu()} keyed fallback={<TargetSelectionHome />}>
+					{(variant) =>
+						variant === "display" ? (
+							<TargetMenuPanel
+								variant="display"
+								targets={displayTargetsData()}
+								isLoading={displayMenuLoading()}
+								errorMessage={displayErrorMessage()}
+								onSelect={selectDisplayTarget}
+								disabled={isRecording()}
+								onBack={() => {
+									setDisplayMenuOpen(false);
+									displayTriggerRef?.focus();
+								}}
+							/>
+						) : variant === "window" ? (
+							<TargetMenuPanel
+								variant="window"
+								targets={windowTargetsData()}
+								isLoading={windowMenuLoading()}
+								errorMessage={windowErrorMessage()}
+								onSelect={selectWindowTarget}
+								disabled={isRecording()}
+								onBack={() => {
+									setWindowMenuOpen(false);
+									windowTriggerRef?.focus();
+								}}
+							/>
+						) : variant === "recording" ? (
+							<TargetMenuPanel
+								variant="recording"
+								targets={recordingsData()}
+								isLoading={recordings.isPending}
+								errorMessage={
+									recordings.error ? "Failed to load recordings" : undefined
+								}
+								onSelect={openRecording}
+								disabled={isRecording()}
+								onBack={() => {
+									setRecordingsMenuOpen(false);
+								}}
+								onViewAll={async () => {
+									await commands.showWindow({
+										Settings: { page: "recordings" },
+									});
+									hideCurrentWindow();
+								}}
+								onRefetch={refreshRecordings}
+							/>
+						) : variant === "screenshot" ? (
+							<TargetMenuPanel
+								variant="screenshot"
+								targets={screenshotsData()}
+								isLoading={screenshots.isPending}
+								errorMessage={
+									screenshots.error ? "Failed to load screenshots" : undefined
+								}
+								onSelect={openScreenshot}
+								disabled={isRecording()}
+								onBack={() => {
+									setScreenshotsMenuOpen(false);
+								}}
+								onViewAll={async () => {
+									await commands.showWindow({
+										Settings: { page: "screenshots" },
+									});
+									hideCurrentWindow();
+								}}
+							/>
+						) : variant === "camera" ? (
+							<TargetMenuPanel
+								variant="camera"
+								targets={devices.cameras}
+								selectedTarget={options.camera() ?? null}
+								isLoading={devices.isPending}
+								onSelect={(c) => {
+									if (!c) {
+										setOptions("cameraLabel", null);
+										setCamera.mutate({ model: null });
+									} else if (c.model_id) {
+										setOptions("cameraLabel", c.display_name);
+										setCamera.mutate({ model: { ModelID: c.model_id } });
+									} else {
+										setOptions("cameraLabel", c.display_name);
+										setCamera.mutate({ model: { DeviceID: c.device_id } });
 									}
-									onSelect={openRecording}
-									disabled={isRecording()}
-									onBack={() => {
-										setRecordingsMenuOpen(false);
-									}}
-									onViewAll={async () => {
-										await commands.showWindow({
-											Settings: { page: "recordings" },
-										});
-										hideCurrentWindow();
-									}}
-									uploadProgress={uploadProgress}
-									reuploadingPaths={reuploadingPaths()}
-									onReupload={handleReupload}
-									onRefetch={refreshRecordings}
-								/>
-							) : variant === "screenshot" ? (
-								<TargetMenuPanel
-									variant="screenshot"
-									targets={screenshotsData()}
-									isLoading={screenshots.isPending}
-									errorMessage={
-										screenshots.error ? "Failed to load screenshots" : undefined
-									}
-									onSelect={openScreenshot}
-									disabled={isRecording()}
-									onBack={() => {
-										setScreenshotsMenuOpen(false);
-									}}
-									onViewAll={async () => {
-										await commands.showWindow({
-											Settings: { page: "screenshots" },
-										});
-										hideCurrentWindow();
-									}}
-								/>
-							) : variant === "camera" ? (
-								<TargetMenuPanel
-									variant="camera"
-									targets={devices.cameras}
-									selectedTarget={options.camera() ?? null}
-									isLoading={devices.isPending}
-									onSelect={(c) => {
-										if (!c) {
-											setOptions("cameraLabel", null);
-											setCamera.mutate({ model: null });
-										} else if (c.model_id) {
-											setOptions("cameraLabel", c.display_name);
-											setCamera.mutate({ model: { ModelID: c.model_id } });
-										} else {
-											setOptions("cameraLabel", c.display_name);
-											setCamera.mutate({ model: { DeviceID: c.device_id } });
-										}
-										setCameraMenuOpen(false);
-										setCameraInitialSettings(null);
-									}}
-									disabled={isRecording()}
-									onBack={() => {
-										setCameraMenuOpen(false);
-										setCameraInitialSettings(null);
-									}}
-									permissions={currentPermissions()}
-									deviceSettings={deviceSettings() ?? undefined}
-									onCameraSettingsChange={(camera, settings) => {
-										void setCameraDeviceSettings(camera, settings);
-									}}
-									compatibilityStudioMode={compatibilityStudioMode()}
-									initialSettingsTarget={cameraInitialSettings()}
-								/>
-							) : variant === "microphone" ? (
-								<TargetMenuPanel
-									variant="microphone"
-									targets={devices.microphones}
-									selectedTarget={options.micName() ?? null}
-									isLoading={devices.isPending}
-									onSelect={(v) => {
-										setMicInput.mutate(v?.name ?? null);
-										setMicrophoneMenuOpen(false);
-										setMicrophoneInitialSettings(null);
-									}}
-									disabled={isRecording()}
-									onBack={() => {
-										setMicrophoneMenuOpen(false);
-										setMicrophoneInitialSettings(null);
-									}}
-									permissions={currentPermissions()}
-									deviceSettings={deviceSettings() ?? undefined}
-									onMicrophoneSettingsChange={(key, settings) => {
-										void setMicrophoneDeviceSettings(key, settings);
-									}}
-									compatibilityStudioMode={compatibilityStudioMode()}
-									initialSettingsTarget={microphoneInitialSettings()}
-								/>
-							) : (
-								<ModeInfoPanel
-									onBack={() => {
-										setModeInfoMenuOpen(false);
-									}}
-								/>
-							)
-						}
-					</Show>
+									setCameraMenuOpen(false);
+									setCameraInitialSettings(null);
+								}}
+								disabled={isRecording()}
+								onBack={() => {
+									setCameraMenuOpen(false);
+									setCameraInitialSettings(null);
+								}}
+								permissions={currentPermissions()}
+								deviceSettings={deviceSettings() ?? undefined}
+								onCameraSettingsChange={(camera, settings) => {
+									void setCameraDeviceSettings(camera, settings);
+								}}
+								compatibilityStudioMode={compatibilityStudioMode()}
+								initialSettingsTarget={cameraInitialSettings()}
+							/>
+						) : variant === "microphone" ? (
+							<TargetMenuPanel
+								variant="microphone"
+								targets={devices.microphones}
+								selectedTarget={options.micName() ?? null}
+								isLoading={devices.isPending}
+								onSelect={(v) => {
+									setMicInput.mutate(v?.name ?? null);
+									setMicrophoneMenuOpen(false);
+									setMicrophoneInitialSettings(null);
+								}}
+								disabled={isRecording()}
+								onBack={() => {
+									setMicrophoneMenuOpen(false);
+									setMicrophoneInitialSettings(null);
+								}}
+								permissions={currentPermissions()}
+								deviceSettings={deviceSettings() ?? undefined}
+								onMicrophoneSettingsChange={(key, settings) => {
+									void setMicrophoneDeviceSettings(key, settings);
+								}}
+								compatibilityStudioMode={compatibilityStudioMode()}
+								initialSettingsTarget={microphoneInitialSettings()}
+							/>
+						) : (
+							<ModeInfoPanel
+								onBack={() => {
+									setModeInfoMenuOpen(false);
+								}}
+							/>
+						)
+					}
 				</Show>
 			</div>
 			<Show when={isActivelyRecording()}>

@@ -1425,7 +1425,7 @@ export function Timeline(props: {
 								}px)`,
 							}}
 						>
-							<div class="absolute top-0 left-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ed-text-3/50" />
+							<div class="absolute top-0 left-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-ed-text-3/50" />
 						</div>
 					)}
 				</Show>
@@ -1444,7 +1444,7 @@ export function Timeline(props: {
 						)}px)`,
 					}}
 				>
-					<div class="size-3 rounded-full bg-ed-playhead ring-2 ring-ed-card -mt-1.5 -ml-[5.5px]" />
+					<div class="size-3 rounded-sm bg-ed-playhead ring-2 ring-ed-card -mt-1.5 -ml-[5.5px]" />
 				</div>
 				<Show when={split() ? editorState.timeline.splitPreview : null}>
 					{(preview) => (

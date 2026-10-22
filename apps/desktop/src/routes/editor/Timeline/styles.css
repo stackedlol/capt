@@ -331,7 +331,7 @@ button.cap-empty-lane-action:hover:not(:disabled) {
 	width: 6px;
 	height: 6px;
 	margin-top: -3px;
-	border-radius: 50%;
+	border-radius: 1px;
 	box-shadow: inset 0 0 0 1.5px var(--ed-accent);
 	transition: background-color 0.12s ease;
 }

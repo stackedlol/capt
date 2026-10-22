@@ -138,7 +138,7 @@ fn macos_permission_needs_settings_fallback(permission: &OSPermission) -> bool {
 
 #[cfg(target_os = "macos")]
 fn macos_focus_permission_window(app: &tauri::AppHandle) {
-    if let Some(window) = ["onboarding", "main", "settings"]
+    if let Some(window) = ["main", "settings"]
         .into_iter()
         .find_map(|label| app.get_webview_window(label))
     {
@@ -345,16 +345,16 @@ fn macos_screen_recording_available() -> bool {
 
 // SCShareableContent's completion needs the main run loop, so blocking the
 // main thread on the strict validation deadlocks the whole app. Both
-// 2026-08-03 macOS hang reports show it: onboarding tray rebuilds
+// 2026-08-03 macOS hang reports show it: tray rebuilds
 // (run_on_main_thread → build_tray_menu → do_permissions_check) parked the
 // main thread in block_on for 76+s until force-quit. Main-thread callers are
 // the tray menu builds (tray.rs), create_tray, the setup-time log line
-// (lib.rs), and RunEvent::Reopen → should_show_onboarding (lib.rs); they get
+// (lib.rs), and RunEvent::Reopen (lib.rs); they get
 // the last strictly-observed answer without blocking — optimistic until the
 // first strict validation completes, since CGPreflight already passed. Reopen
 // consuming an optimistic answer is self-correcting: ShowCapWindow::Main
-// re-checks off-main (windows.rs) and redirects back to Onboarding. The
-// onboarding/permission UIs poll via async commands and keep the strict path.
+// re-checks off-main (windows.rs). The permission UIs poll via async
+// commands and keep the strict path.
 #[cfg(target_os = "macos")]
 fn macos_screen_recording_available_with(
     preflight_granted: bool,
@@ -644,6 +644,18 @@ pub async fn request_permission(_app: tauri::AppHandle, _permission: OSPermissio
     crate::tray::refresh_tray_menu_for_app(&_app);
 }
 
+/// Capt has no onboarding, so the permissions recording can't work without
+/// are requested straight from macOS at launch instead.
+pub(crate) async fn request_missing_necessary_permissions(app: tauri::AppHandle) {
+    let check = do_permissions_check(false);
+    if !check.screen_recording.permitted() {
+        request_permission(app.clone(), OSPermission::ScreenRecording).await;
+    }
+    if !check.accessibility.permitted() {
+        request_permission(app, OSPermission::Accessibility).await;
+    }
+}
+
 pub(crate) fn check_camera_access() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let status =
@@ -718,11 +730,7 @@ pub struct OSPermissionsCheck {
     pub accessibility: OSPermissionStatus,
 }
 
-impl OSPermissionsCheck {
-    pub fn necessary_granted(&self) -> bool {
-        self.screen_recording.permitted() && self.accessibility.permitted()
-    }
-}
+impl OSPermissionsCheck {}
 
 #[tauri::command(async)]
 #[specta::specta]

@@ -56,7 +56,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 		id: "title",
 		group: "Titles",
 		name: "Title",
-		sample: "Introducing Cap",
+		sample: "Introducing capt",
 		style: {
 			fontStack: SANS,
 			fontSize: 96,
@@ -226,7 +226,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 		id: "caption",
 		group: "Lower thirds",
 		name: "Caption",
-		sample: "Recorded with Cap",
+		sample: "Recorded with capt",
 		center: { x: 0.5, y: 0.88 },
 		style: {
 			fontStack: SANS,

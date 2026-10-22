@@ -885,7 +885,7 @@ function TextSegmentOverlay(props: {
 								onMouseDown={createResizeHandler(corner.dirX, corner.dirY)}
 							>
 								<span
-									class="w-3 h-3 rounded-full border border-white shadow-xs pointer-events-none bg-blue-9 transition-transform group-hover/handle:scale-125"
+									class="w-3 h-3 rounded-sm border border-white shadow-xs pointer-events-none bg-blue-9 transition-transform group-hover/handle:scale-125"
 									style={{ opacity: "var(--preview-controls-opacity, 1)" }}
 								/>
 							</div>

@@ -79,11 +79,11 @@ where
     T: Manager<R> + ?Sized,
     R: Runtime,
 {
-    let Some(app_state) = manager.try_state::<ArcLock<crate::App>>() else {
+    if manager.try_state::<ArcLock<crate::App>>().is_none() {
         return Err(AuthedApiError::AppStateUnavailable);
-    };
+    }
 
-    Ok(app_state.read().await.server_url.clone())
+    Ok(default_server_url())
 }
 
 #[derive(Clone)]

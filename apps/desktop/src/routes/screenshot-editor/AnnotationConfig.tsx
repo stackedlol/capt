@@ -210,7 +210,7 @@ function ColorPickerButton(props: {
 	return (
 		<Popover placement="bottom" gutter={8}>
 			<Popover.Trigger class="outline-hidden group">
-				<div class="size-5 rounded-full border border-gray-5 transition-all group-hover:scale-110 group-hover:border-gray-7 group-active:scale-95 overflow-hidden">
+				<div class="size-5 rounded-sm border border-gray-5 transition-all group-hover:scale-110 group-hover:border-gray-7 group-active:scale-95 overflow-hidden">
 					<div
 						class="w-full h-full"
 						style={{
@@ -239,7 +239,7 @@ function ColorPickerButton(props: {
 									<button
 										type="button"
 										onClick={() => props.onChange("transparent")}
-										class="size-5 rounded-full border border-gray-4 relative overflow-hidden hover:scale-110 transition-transform"
+										class="size-5 rounded-sm border border-gray-4 relative overflow-hidden hover:scale-110 transition-transform"
 										style={{
 											background:
 												"linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)",
@@ -248,7 +248,7 @@ function ColorPickerButton(props: {
 										}}
 									>
 										<Show when={isTransparent()}>
-											<div class="absolute inset-0 ring-2 ring-blue-9 rounded-full" />
+											<div class="absolute inset-0 ring-2 ring-blue-9 rounded-sm" />
 										</Show>
 									</button>
 								</Tooltip>
@@ -257,14 +257,14 @@ function ColorPickerButton(props: {
 								{(color: string) => (
 									<button
 										type="button"
-										class="size-5 rounded-full border border-black/10 hover:scale-110 transition-transform relative"
+										class="size-5 rounded-sm border border-black/10 hover:scale-110 transition-transform relative"
 										style={{ "background-color": color }}
 										onClick={() => props.onChange(color)}
 									>
 										<Show
 											when={props.value.toLowerCase() === color.toLowerCase()}
 										>
-											<div class="absolute inset-0 ring-2 ring-white/50 rounded-full" />
+											<div class="absolute inset-0 ring-2 ring-white/50 rounded-sm" />
 										</Show>
 									</button>
 								)}

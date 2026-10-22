@@ -1,1 +1,0 @@
-export { CapEmbed } from "./CapEmbed";

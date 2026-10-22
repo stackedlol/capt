@@ -254,7 +254,7 @@ export function ImageOverlay(props: {
 								<button
 									type="button"
 									aria-label="Rotate image"
-									class="absolute -top-7 left-1/2 size-3 -translate-x-1/2 rounded-full border border-white bg-blue-9 cursor-crosshair"
+									class="absolute -top-7 left-1/2 size-3 -translate-x-1/2 rounded-sm border border-white bg-blue-9 cursor-crosshair"
 									onMouseDown={(event) => drag(event, index, "rotate")}
 								/>
 								<For
@@ -269,7 +269,7 @@ export function ImageOverlay(props: {
 										<button
 											type="button"
 											aria-label="Resize image"
-											class="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-blue-9"
+											class="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white bg-blue-9"
 											style={{
 												left: corner.x < 0 ? "0" : "100%",
 												top: corner.y < 0 ? "0" : "100%",
