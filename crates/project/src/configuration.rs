@@ -368,6 +368,10 @@ pub struct BackgroundConfiguration {
     /// from `frame`: the decorative MacBook style is a mockup, this restores
     /// something the capture really did hide, and the two are independent.
     pub notch: Option<NotchConfiguration>,
+    /// Ordered dither, halftone or ASCII drawn over a color or gradient
+    /// backdrop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<crate::BackgroundPatternConfiguration>,
 }
 
 impl Default for BorderConfiguration {
@@ -397,6 +401,7 @@ impl Default for BackgroundConfiguration {
             border: None, // Border is disabled by default for backwards compatibility
             frame: None,  // No decorative frame by default
             notch: None,
+            pattern: None,
         }
     }
 }
@@ -2680,6 +2685,10 @@ pub struct ProjectConfiguration {
     /// durations from `fade_duration`.
     #[serde(default)]
     pub text_anim_version: u32,
+    #[serde(default)]
+    pub lens: crate::LensConfiguration,
+    #[serde(default)]
+    pub tracker: crate::TrackerConfiguration,
 }
 
 pub const TEXT_SIZE_VERSION: u32 = 1;
@@ -2731,6 +2740,8 @@ impl Default for ProjectConfiguration {
             color_correction: Default::default(),
             text_size_version: TEXT_SIZE_VERSION,
             text_anim_version: TEXT_ANIM_VERSION,
+            lens: Default::default(),
+            tracker: Default::default(),
         }
     }
 }

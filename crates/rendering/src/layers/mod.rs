@@ -11,9 +11,11 @@ mod display;
 mod frame;
 mod image;
 mod keyboard;
+mod lens;
 mod mask;
 mod notch;
 mod text;
+mod tracker;
 
 use std::sync::OnceLock;
 
@@ -89,9 +91,11 @@ pub use display::*;
 pub use frame::*;
 pub use image::*;
 pub use keyboard::*;
+pub use lens::*;
 pub use mask::*;
 pub use notch::*;
 pub use text::*;
+pub use tracker::*;
 
 #[cfg(test)]
 mod font_tests {

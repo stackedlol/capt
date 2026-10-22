@@ -1,4 +1,5 @@
 mod animated_gradient;
+mod capt_fx;
 mod caption_timing;
 mod configuration;
 pub mod cursor;
@@ -6,6 +7,7 @@ pub mod keyboard;
 mod meta;
 
 pub use animated_gradient::*;
+pub use capt_fx::*;
 pub use caption_timing::{derive_caption_track_segments, source_caption_id, synchronize_captions};
 pub use configuration::*;
 pub use cursor::*;

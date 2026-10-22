@@ -12,7 +12,11 @@ import {
 	For,
 	Show,
 } from "solid-js";
-import type { BackgroundSource } from "~/utils/tauri";
+import type {
+	BackgroundPattern,
+	BackgroundPatternConfiguration,
+	BackgroundSource,
+} from "~/utils/tauri";
 import IconCapBgBlur from "~icons/cap/bg-blur";
 import IconCapCircleX from "~icons/cap/circle-x";
 import IconCapImage from "~icons/cap/image";
@@ -552,9 +556,35 @@ export function BackgroundSettingsPopover() {
 															)}
 														</For>
 													</div>
+													<div class="flex flex-col gap-2">
+														<span class="text-[11px] text-gray-11">
+															Noise {Math.round(source().noise_intensity ?? 0)}%
+														</span>
+														<Slider
+															value={[source().noise_intensity ?? 0]}
+															onChange={(v) =>
+																setProjectSource({
+																	...source(),
+																	noise_intensity: v[0],
+																})
+															}
+															minValue={0}
+															maxValue={100}
+															step={1}
+															formatTooltip="%"
+														/>
+													</div>
 												</div>
 											);
 										}}
+									</Show>
+									<Show
+										when={
+											project.background.source.type === "gradient" ||
+											project.background.source.type === "color"
+										}
+									>
+										<ScreenshotPatternField />
 									</Show>
 								</KTabs.Content>
 								<KTabs.Content value="animatedGradient">
@@ -580,5 +610,66 @@ export function BackgroundSettingsPopover() {
 				</Popover.Content>
 			</Popover.Portal>
 		</Popover>
+	);
+}
+
+const SCREENSHOT_PATTERNS: { id: BackgroundPattern; name: string }[] = [
+	{ id: "none", name: "None" },
+	{ id: "dither", name: "Dither" },
+	{ id: "halftone", name: "Halftone" },
+	{ id: "ascii", name: "ASCII" },
+];
+
+function ScreenshotPatternField() {
+	const { project, setProject } = useScreenshotEditorContext();
+	const pattern = (): BackgroundPatternConfiguration =>
+		project.background.pattern ?? { kind: "none", scale: 6, strength: 1 };
+	const update = (patch: Partial<BackgroundPatternConfiguration>) =>
+		setProject("background", "pattern", { ...pattern(), ...patch });
+
+	return (
+		<div class="flex flex-col gap-3 pt-3">
+			<div class="flex gap-1">
+				<For each={SCREENSHOT_PATTERNS}>
+					{(p) => (
+						<button
+							type="button"
+							class="flex-1 h-7 rounded-[4px] border font-mono text-[10px] uppercase tracking-wider transition-colors"
+							classList={{
+								"border-gray-12 text-gray-12 bg-gray-3":
+									pattern().kind === p.id,
+								"border-gray-5 text-gray-10 hover:text-gray-12":
+									pattern().kind !== p.id,
+							}}
+							onClick={() => update({ kind: p.id })}
+						>
+							{p.name}
+						</button>
+					)}
+				</For>
+			</div>
+			<Show when={pattern().kind !== "none"}>
+				<span class="text-[11px] text-gray-11">
+					Cell {Math.round(pattern().scale)}px
+				</span>
+				<Slider
+					value={[pattern().scale]}
+					onChange={(v) => update({ scale: v[0] })}
+					minValue={2}
+					maxValue={32}
+					step={1}
+				/>
+				<span class="text-[11px] text-gray-11">
+					Strength {Math.round(pattern().strength * 100)}%
+				</span>
+				<Slider
+					value={[pattern().strength]}
+					onChange={(v) => update({ strength: v[0] })}
+					minValue={0}
+					maxValue={1}
+					step={0.01}
+				/>
+			</Show>
+		</div>
 	);
 }

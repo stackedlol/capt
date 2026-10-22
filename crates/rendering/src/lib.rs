@@ -21,8 +21,8 @@ use frame_pipeline::{
 use futures::future::OptionFuture;
 use layers::{
     Background, BackgroundLayer, BlurLayer, Camera3DBlurKind, Camera3DLayer, CameraLayer,
-    ClickRippleLayer, ColorGradeLayer, CursorLayer, DisplayLayer, FrameLayer, MaskLayer,
-    NotchLayer, NotchUniforms,
+    ClickRippleLayer, ColorGradeLayer, CursorLayer, DisplayLayer, FrameLayer, LensLayer, MaskLayer,
+    NotchLayer, NotchUniforms, TrackerLayer,
 };
 use specta::Type;
 use spring_mass_damper::SpringMassDamperSimulationConfig;
@@ -2940,6 +2940,10 @@ pub struct ProjectUniforms {
     /// their edges); the cursor and click-ripple layers scale by it.
     pub cursor_clip_visibility: f32,
     pub click_ripples: Vec<ClickRipple>,
+    pub tracker_locks: Vec<TrackerLock>,
+    /// 0..1 kick from the newest tracker lock; drives the lens tear and
+    /// aberration flare.
+    pub tracker_lock_pulse: f32,
     cursor_event_order: CursorEventOrder,
     pub project: Arc<ProjectConfiguration>,
     pub zoom: InterpolatedZoom,
@@ -3017,6 +3021,59 @@ fn collect_click_ripples(
     }
 
     ripples
+}
+
+/// A tracker box locking onto a click: where the cursor was on the button
+/// press, and how far through the lock animation it is.
+#[derive(Clone, Debug)]
+pub struct TrackerLock {
+    pub position: Coord<RawDisplayUVSpace>,
+    pub progress: f32,
+}
+
+fn collect_tracker_locks(
+    project: &ProjectConfiguration,
+    cursor_events: &CursorEvents,
+    now_ms: f64,
+    cursor_stop_time: Option<f32>,
+    cursor_interp_fn: &dyn Fn(f32) -> Option<InterpolatedCursorPosition>,
+) -> Vec<TrackerLock> {
+    if !project.tracker.enabled && !project.lens.is_active() {
+        return Vec::new();
+    }
+
+    let duration_ms = project.tracker.lock_duration_clamped() as f64 * 1000.0;
+    let mut locks: Vec<TrackerLock> = cursor_events
+        .clicks
+        .iter()
+        .filter(|click| click.down)
+        .filter_map(|click| {
+            let age_ms = now_ms - click.time_ms;
+            if !(0.0..duration_ms).contains(&age_ms) {
+                return None;
+            }
+            let cursor_time =
+                cursor_time_for_interpolation((click.time_ms / 1000.0) as f32, cursor_stop_time);
+            let position = cursor_interp_fn(cursor_time)?.position;
+            Some(TrackerLock {
+                position,
+                progress: (age_ms / duration_ms) as f32,
+            })
+        })
+        .collect();
+
+    if locks.len() > layers::MAX_TRACKER_LOCKS {
+        locks.drain(..locks.len() - layers::MAX_TRACKER_LOCKS);
+    }
+
+    locks
+}
+
+fn tracker_lock_pulse(locks: &[TrackerLock]) -> f32 {
+    locks
+        .iter()
+        .map(|lock| (1.0 - lock.progress / 0.4).clamp(0.0, 1.0))
+        .fold(0.0, f32::max)
 }
 
 #[derive(Debug, Clone)]
@@ -4203,6 +4260,14 @@ impl ProjectUniforms {
             cursor_interp_fn,
             cursor_event_order.clicks,
         );
+        let tracker_locks = collect_tracker_locks(
+            project,
+            cursor_events,
+            current_recording_time as f64 * 1000.0,
+            cursor_stop_time,
+            cursor_interp_fn,
+        );
+        let tracker_lock_pulse = tracker_lock_pulse(&tracker_locks);
         let lookback_t = (cursor_time_for_interp - 0.4).max(0.0);
         let past_cursor_for_tilt = cursor_interp_fn(lookback_t);
 
@@ -5219,6 +5284,8 @@ impl ProjectUniforms {
             prev_cursor: prev_interpolated_cursor,
             cursor_clip_visibility,
             click_ripples,
+            tracker_locks,
+            tracker_lock_pulse,
             cursor_event_order,
             display_parent_motion_px: display_motion_parent,
             motion_blur_amount: cursor_motion_blur,
@@ -7901,6 +7968,8 @@ pub struct RendererLayers {
     notch: NotchLayer,
     click_ripple: ClickRippleLayer,
     cursor: CursorLayer,
+    tracker: TrackerLayer,
+    lens: LensLayer,
     camera: CameraLayer,
     camera_only: CameraLayer,
     mask: MaskLayer,
@@ -7979,6 +8048,9 @@ impl RendererLayers {
             });
             let cursor =
                 scope.spawn(|| readiness::measure("layers.cursor", || CursorLayer::new(device)));
+            let tracker =
+                scope.spawn(|| readiness::measure("layers.tracker", || TrackerLayer::new(device)));
+            let lens = scope.spawn(|| readiness::measure("layers.lens", || LensLayer::new(device)));
             let mask = scope.spawn(|| readiness::measure("layers.mask", || MaskLayer::new(device)));
             let overlays =
                 scope.spawn(|| include_overlays.then(|| OverlayLayers::new(device, queue)));
@@ -8014,6 +8086,8 @@ impl RendererLayers {
                 }),
                 click_ripple: join_layer(click_ripple),
                 cursor: join_layer(cursor),
+                tracker: join_layer(tracker),
+                lens: join_layer(lens),
                 camera: readiness::measure("layers.camera", || {
                     CameraLayer::new_with_all_shared_pipelines(
                         device,
@@ -8242,6 +8316,7 @@ impl RendererLayers {
 
         self.background_color_grade
             .prepare(&constants.queue, uniforms);
+        self.lens.prepare(&constants.queue, uniforms);
 
         if render_display {
             self.frame.prepare(constants, uniforms);
@@ -8257,6 +8332,7 @@ impl RendererLayers {
         }
 
         self.click_ripple.prepare(uniforms, constants);
+        self.tracker.prepare(uniforms, constants);
 
         self.cursor
             .prepare(segment_frames, cursor, uniforms, constants);
@@ -8395,6 +8471,7 @@ impl RendererLayers {
         self.background_blur.prepare(&constants.queue, uniforms);
         self.background_color_grade
             .prepare(&constants.queue, uniforms);
+        self.lens.prepare(&constants.queue, uniforms);
         timings.background_blur_prepare_duration = start.elapsed();
 
         let start = Instant::now();
@@ -8420,6 +8497,7 @@ impl RendererLayers {
 
         let start = Instant::now();
         self.click_ripple.prepare(uniforms, constants);
+        self.tracker.prepare(uniforms, constants);
         self.cursor
             .prepare(segment_frames, cursor, uniforms, constants);
         timings.cursor_prepare_duration = start.elapsed();
@@ -8662,6 +8740,7 @@ impl RendererLayers {
             let pass = passes.pass(content_view!(), load);
             self.click_ripple.render(pass);
             self.cursor.render(pass);
+            self.tracker.render(pass);
         }
 
         // After the cursor, which really does disappear behind the notch on a
@@ -8781,6 +8860,17 @@ impl RendererLayers {
                     .captions
                     .render(passes.pass(session.current_texture_view(), load));
             }
+        }
+
+        // Last, over everything including annotations, so the lens reads as
+        // the camera filming the finished frame.
+        if self.lens.is_active() {
+            self.lens.render(
+                passes.pass(session.other_texture_view(), clear),
+                device,
+                session.current_texture_view(),
+            );
+            session.swap_textures();
         }
         Ok(())
     }
@@ -9328,6 +9418,145 @@ mod project_uniforms_tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn capt_effects_render_and_change_pixels() {
+        let mut constants = cursor_test_constants().await;
+        let size = XY::new(640, 360);
+        constants.options.screen_size = size;
+        let events = CursorEvents {
+            moves: vec![cursor_move(0.0, 0.3, 0.4), cursor_move(400.0, 0.6, 0.55)],
+            clicks: vec![cap_project::CursorClickEvent {
+                active_modifiers: Vec::new(),
+                cursor_num: 0,
+                cursor_id: "primary".to_string(),
+                time_ms: 250.0,
+                down: true,
+            }],
+        };
+        let mut pixels = vec![0u8; 640 * 360 * 4];
+        for (i, px) in pixels.chunks_mut(4).enumerate() {
+            let (x, y) = (i % 640, i / 640);
+            let line = u8::from(y % 24 < 3 && x % 160 < 120);
+            px.copy_from_slice(&[18 + line * 200, 20 + line * 210, 26 + line * 200, 255]);
+        }
+        let source = DecodedFrame::new(pixels, size.x, size.y);
+
+        let base = {
+            let mut project = ProjectConfiguration::default();
+            project.background.source = BackgroundSource::Gradient {
+                from: [20, 0, 2],
+                to: [210, 18, 27],
+                angle: 135,
+                noise_intensity: None,
+                noise_scale: None,
+                animated: None,
+                animation_speed: None,
+            };
+            project.background.padding = 12.0;
+            project.background.rounding = 30.0;
+            project
+        };
+        let variants: Vec<(&str, Box<dyn Fn(&mut ProjectConfiguration)>)> = vec![
+            ("plain", Box::new(|_| {})),
+            (
+                "dither",
+                Box::new(|p| {
+                    p.background.pattern = Some(cap_project::BackgroundPatternConfiguration {
+                        kind: cap_project::BackgroundPattern::Dither,
+                        ..Default::default()
+                    })
+                }),
+            ),
+            (
+                "halftone",
+                Box::new(|p| {
+                    p.background.pattern = Some(cap_project::BackgroundPatternConfiguration {
+                        kind: cap_project::BackgroundPattern::Halftone,
+                        ..Default::default()
+                    })
+                }),
+            ),
+            (
+                "ascii",
+                Box::new(|p| {
+                    p.background.pattern = Some(cap_project::BackgroundPatternConfiguration {
+                        kind: cap_project::BackgroundPattern::Ascii,
+                        ..Default::default()
+                    })
+                }),
+            ),
+            ("tracker", Box::new(|p| p.tracker.enabled = true)),
+            (
+                "lens",
+                Box::new(|p| {
+                    p.tracker.enabled = true;
+                    p.lens = cap_project::LensConfiguration {
+                        palette: cap_project::LensPalette::Thermal,
+                        bloom: 0.6,
+                        aberration: 0.5,
+                        led_grid: 0.6,
+                        grain: 0.4,
+                        depth_of_field: 0.7,
+                        vignette: 0.5,
+                        scanlines: 0.3,
+                    };
+                }),
+            ),
+        ];
+
+        let dump = std::env::var_os("CAPT_FX_DUMP").map(std::path::PathBuf::from);
+        let mut plain: Option<Vec<u8>> = None;
+        for (name, apply) in variants {
+            let mut project = base.clone();
+            apply(&mut project);
+            project.timeline = Some(
+                serde_json::from_value(serde_json::json!({
+                    "segments": [{ "start": 0.0, "end": 2.0, "timescale": 1.0 }],
+                    "zoomSegments": []
+                }))
+                .unwrap(),
+            );
+            let zoom = ZoomTransformTimeline::from_project(&project, &events, 2.0, size);
+            let project = Arc::new(project);
+            let mut renderer = FrameRenderer::new(&constants);
+            let mut layers = RendererLayers::new(&constants.device, &constants.queue);
+            let time = 0.3;
+            let frames = DecodedSegmentFrames {
+                screen_size: size,
+                screen_frame: Some(source.clone()),
+                camera_frame: None,
+                segment_time: time,
+                recording_time: time,
+                segment_has_camera: false,
+            };
+            let uniforms = ProjectUniforms::new(
+                &constants, &project, 18, 60, size, &events, &frames, 2.0, &zoom,
+            );
+            let frame = renderer
+                .render_immediate(frames, uniforms, &events, true, &mut layers)
+                .await
+                .unwrap();
+            let mut rgba = Vec::with_capacity((frame.width * frame.height * 4) as usize);
+            for row in frame.data.chunks(frame.padded_bytes_per_row as usize) {
+                rgba.extend_from_slice(&row[..(frame.width * 4) as usize]);
+            }
+            if let Some(dir) = &dump {
+                image::save_buffer(
+                    dir.join(format!("capt-{name}.png")),
+                    &rgba,
+                    frame.width,
+                    frame.height,
+                    image::ExtendedColorType::Rgba8,
+                )
+                .unwrap();
+            }
+            match &plain {
+                None => plain = Some(rgba),
+                Some(plain) => assert!(plain != &rgba, "{name} must change the frame"),
+            }
+        }
     }
 
     #[tokio::test]

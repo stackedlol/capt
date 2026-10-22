@@ -112,6 +112,7 @@ import {
 import { GradientEditor } from "./GradientEditor";
 import { ImageSegmentConfig } from "./image-segment-config";
 import { KeyboardTab } from "./KeyboardTab";
+import { LensTab, PatternControls } from "./LensTab";
 import {
 	encodeMaskEffect,
 	getMaskEffect,
@@ -428,6 +429,7 @@ const TAB_IDS = {
 	keyboard: "keyboard",
 	hotkeys: "hotkeys",
 	captions: "captions",
+	lens: "lens",
 } as const;
 
 export function ConfigSidebar() {
@@ -634,7 +636,8 @@ function ConfigSidebarContent() {
 			| "cursor"
 			| "keyboard"
 			| "hotkeys"
-			| "captions",
+			| "captions"
+			| "lens",
 	});
 
 	// Clip selection is a timeline-only affordance (highlight, Delete key,
@@ -711,6 +714,7 @@ function ConfigSidebarContent() {
 							id: TAB_IDS.captions,
 							icon: IconCapMessageBubble,
 						},
+						{ id: TAB_IDS.lens, icon: IconLucideAperture },
 						// { id: "hotkeys" as const, icon: IconCapHotkeys },
 					].filter(
 						(item) =>
@@ -1128,6 +1132,12 @@ function ConfigSidebarContent() {
 					class="flex flex-col flex-1 gap-3.5 pt-3.5 px-4 pb-4 min-h-0"
 				>
 					<KeyboardTab brandColorSwatches={brandColorSwatches()} />
+				</KTabs.Content>
+				<KTabs.Content
+					value={TAB_IDS.lens}
+					class="flex flex-col flex-1 gap-3.5 pt-3.5 px-4 pb-4 min-h-0"
+				>
+					<LensTab />
 				</KTabs.Content>
 			</div>
 			<div
@@ -2774,10 +2784,24 @@ function BackgroundConfig(props: {
                       </button>
                     </Tooltip> */}
 								</div>
+								<PatternControls
+									value={project.background.pattern}
+									onChange={(pattern) =>
+										setProject("background", "pattern", pattern)
+									}
+								/>
 							</Show>
 						</KTabs.Content>
 						<KTabs.Content value="gradient">
-							<GradientEditor brandColorSwatches={props.brandColorSwatches} />
+							<div class="flex flex-col gap-3.5">
+								<GradientEditor brandColorSwatches={props.brandColorSwatches} />
+								<PatternControls
+									value={project.background.pattern}
+									onChange={(pattern) =>
+										setProject("background", "pattern", pattern)
+									}
+								/>
+							</div>
 						</KTabs.Content>
 						<KTabs.Content value="animatedGradient">
 							<AnimatedGradientEditor

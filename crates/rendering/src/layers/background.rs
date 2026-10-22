@@ -342,6 +342,7 @@ pub enum Inner {
     },
     ColorOrGradient {
         value: ColorOrGradient,
+        pattern: [f32; 4],
         #[allow(unused)]
         buffer: wgpu::Buffer,
         bind_group: wgpu::BindGroup,
@@ -375,6 +376,7 @@ impl BackgroundLayer {
     ) -> Result<(), RenderingError> {
         let device = &constants.device;
         let queue = &constants.queue;
+        let pattern = pattern_uniform(uniforms);
 
         match background {
             Background::AnimatedGradient(config) => match &mut self.inner {
@@ -409,6 +411,7 @@ impl BackgroundLayer {
                                 self.generation += 1;
                                 self.inner = Some(Inner::ColorOrGradient {
                                     value: ColorOrGradient::Color([1.0, 1.0, 1.0, 1.0]),
+                                    pattern: [0.0; 4],
                                     bind_group: self.color_pipeline.bind_group(device, &buffer),
                                     buffer,
                                 });
@@ -472,13 +475,17 @@ impl BackgroundLayer {
             Background::Color(color) => match &self.inner {
                 Some(Inner::ColorOrGradient {
                     value: ColorOrGradient::Color(current_color),
+                    pattern: current_pattern,
                     ..
-                }) if &color == current_color => {}
+                }) if &color == current_color && *current_pattern == pattern => {}
                 _ => {
-                    let buffer = GradientOrColorUniforms::from(background).to_buffer(device);
+                    let buffer = GradientOrColorUniforms::from(background)
+                        .with_pattern(pattern)
+                        .to_buffer(device);
                     self.generation += 1;
                     self.inner = Some(Inner::ColorOrGradient {
                         value: ColorOrGradient::Color(color),
+                        pattern,
                         bind_group: self.color_pipeline.bind_group(device, &buffer),
                         buffer,
                     });
@@ -487,13 +494,17 @@ impl BackgroundLayer {
             Background::Gradient(gradient) => match &self.inner {
                 Some(Inner::ColorOrGradient {
                     value: ColorOrGradient::Gradient(current_gradient),
+                    pattern: current_pattern,
                     ..
-                }) if &gradient == current_gradient => {}
+                }) if &gradient == current_gradient && *current_pattern == pattern => {}
                 _ => {
-                    let buffer = GradientOrColorUniforms::from(background).to_buffer(device);
+                    let buffer = GradientOrColorUniforms::from(background)
+                        .with_pattern(pattern)
+                        .to_buffer(device);
                     self.generation += 1;
                     self.inner = Some(Inner::ColorOrGradient {
                         value: ColorOrGradient::Gradient(gradient),
+                        pattern,
                         bind_group: self.color_pipeline.bind_group(device, &buffer),
                         buffer,
                     });
@@ -691,9 +702,32 @@ pub struct GradientOrColorUniforms {
     pub noise_intensity: f32,
     pub noise_scale: f32,
     _padding: f32,
+    pub pattern: [f32; 4],
+}
+
+fn pattern_uniform(uniforms: &ProjectUniforms) -> [f32; 4] {
+    let Some(pattern) = &uniforms.project.background.pattern else {
+        return [0.0; 4];
+    };
+    let kind = pattern.kind.shader_index();
+    if kind == 0.0 {
+        return [0.0; 4];
+    }
+    let px_scale = (uniforms.output_size.1 as f32 / 1080.0).max(0.25);
+    [
+        kind,
+        (pattern.scale_clamped() * px_scale).round().max(1.0),
+        pattern.strength_clamped(),
+        0.0,
+    ]
 }
 
 impl GradientOrColorUniforms {
+    fn with_pattern(mut self, pattern: [f32; 4]) -> Self {
+        self.pattern = pattern;
+        self
+    }
+
     fn to_buffer(self, device: &wgpu::Device) -> wgpu::Buffer {
         device.create_buffer_init(
             &(wgpu::util::BufferInitDescriptor {
@@ -725,6 +759,7 @@ impl From<Background> for GradientOrColorUniforms {
                 noise_intensity: 0.0,
                 noise_scale: 0.0,
                 _padding: 0.0,
+                pattern: [0.0; 4],
             },
             Background::Gradient(Gradient {
                 start,
@@ -744,6 +779,7 @@ impl From<Background> for GradientOrColorUniforms {
                 noise_intensity,
                 noise_scale,
                 _padding: 0.0,
+                pattern: [0.0; 4],
             },
             Background::Image { .. } | Background::AnimatedGradient(_) => {
                 unreachable!("Textured backgrounds should be handled separately")

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Stand-in for xcodebuild so Capt builds with only the Command Line Tools.
+# cidre's build.rs runs `xcodebuild -project pomace.xcodeproj -target X ... build`
+# to produce one static lib per target; each target is a single ObjC file
+# (pomace/X/X.m) built with ARC, so clang + ar reproduce it exactly.
+set -euo pipefail
+
+project="" sdk="macosx" arch="arm64" conf="Release" symroot="" mac_min=""
+targets=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-project) project="$2"; shift 2 ;;
+	-sdk) sdk="$2"; shift 2 ;;
+	-arch) arch="$2"; shift 2 ;;
+	-configuration) conf="$2"; shift 2 ;;
+	-target) targets+=("$2"); shift 2 ;;
+	SYMROOT=*) symroot="${1#SYMROOT=}"; shift ;;
+	MACOSX_DEPLOYMENT_TARGET=*) mac_min="${1#MACOSX_DEPLOYMENT_TARGET=}"; shift ;;
+	-version) echo "Xcode 16.0 (capt shim)"; exit 0 ;;
+	*) shift ;;
+	esac
+done
+
+if [ -z "$project" ] || [ "$sdk" != "macosx" ]; then
+	echo "capt xcodebuild shim: only pomace macOS builds are supported" >&2
+	exit 1
+fi
+
+src_root="$(cd "$(dirname "$project")" && pwd)"
+out="${symroot:-$src_root/build}/$conf"
+mkdir -p "$out"
+sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+opt="-O2"
+[ "$conf" = "Debug" ] && opt="-O0 -g"
+
+for t in "${targets[@]}"; do
+	obj="$out/$t.o"
+	clang -x objective-c -std=gnu17 -fobjc-arc -fmodules $opt \
+		-arch "$arch" -isysroot "$sdk_path" ${mac_min:+-mmacosx-version-min=$mac_min} \
+		-I"$src_root/$t" -c "$src_root/$t/$t.m" -o "$obj"
+	rm -f "$out/lib$t.a"
+	ar rcs "$out/lib$t.a" "$obj"
+	echo "capt shim: built lib$t.a"
+done
