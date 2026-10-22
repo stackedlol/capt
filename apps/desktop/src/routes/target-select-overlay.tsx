@@ -1368,16 +1368,8 @@ function Inner() {
 										/>
 									</Show>
 									<Show when={!isValid()}>
-										<div class="flex flex-col gap-1 items-center p-2.5 my-2 rounded-xl border min-w-fit w-fit bg-red-2 shadow-xs border-red-4 text-sm">
-											<p>
-												Minimum size is {minSize().width} x {minSize().height}
-											</p>
-											<small>
-												<code>
-													{crop().width} x {crop().height}
-												</code>{" "}
-												is too small
-											</small>
+										<div class="my-2 w-fit rounded-md bg-black/70 px-3 py-1.5 text-[13px] tracking-[-0.01em] text-white/75 backdrop-blur-md">
+											Minimum size is {minSize().width}×{minSize().height}px.
 										</div>
 									</Show>
 								</div>
@@ -1390,7 +1382,7 @@ function Inner() {
 								onInteraction={setIsInteracting}
 								onCropChange={setCrop}
 								initialCrop={() => effectiveInitialAreaBounds() ?? CROP_ZERO}
-								showBounds={isValid()}
+								appearance="minimal"
 								aspectRatio={currentAspect() ?? undefined}
 								snapToRatioEnabled={currentSnapToRatio()}
 								onContextMenu={(e) => showCropOptionsMenu(e)}

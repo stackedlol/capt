@@ -6421,6 +6421,10 @@ fn project_config_from_recording(
         })
         .collect::<Vec<_>>();
 
+    if settings.auto_zoom_on_clicks {
+        crate::ai_zoom::mark_pending(app, &completed_recording.project_path);
+    }
+
     let zoom_segments = if settings.auto_zoom_on_clicks {
         generate_zoom_segments_from_clicks(
             completed_recording,

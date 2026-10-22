@@ -1,10 +1,10 @@
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 use cap_project::{
     CursorClickEvent, CursorMoveEvent, GlideDirection, KeyboardSettings, ProjectConfiguration,
     ZoomMode, ZoomSegment,
 };
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::json;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
@@ -14,7 +14,9 @@ use crate::{editor_window::WindowEditorInstance, recording};
 
 const ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
 const DEFAULT_MODEL: &str = "deepseek-flash";
+const DEFAULT_EFFORT: &str = "low";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
+const PENDING_MARKER: &str = "ai-zoom.pending";
 
 const MIN_AMOUNT: f64 = 1.2;
 const MAX_AMOUNT: f64 = 3.0;
@@ -56,7 +58,7 @@ struct Plan {
     segments: Vec<PlannedSegment>,
 }
 
-fn api_key(app: &AppHandle) -> Option<String> {
+pub(crate) fn api_key(app: &AppHandle) -> Option<String> {
     let from_settings = app
         .store("store")
         .ok()
@@ -246,15 +248,21 @@ fn sanitize(planned: Vec<PlannedSegment>, duration: f64) -> Vec<ZoomSegment> {
         .collect()
 }
 
-async fn request_plan(key: &str, prompt: &serde_json::Value) -> Result<Plan, String> {
+pub(crate) async fn deepseek_json<T: DeserializeOwned>(
+    key: &str,
+    system: &str,
+    user: String,
+) -> Result<T, String> {
     let model = std::env::var("DEEPSEEK_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+    let effort = std::env::var("DEEPSEEK_EFFORT").unwrap_or_else(|_| DEFAULT_EFFORT.to_string());
     let body = json!({
         "model": model,
+        "reasoning_effort": effort,
         "temperature": 0.2,
         "response_format": { "type": "json_object" },
         "messages": [
-            { "role": "system", "content": SYSTEM_PROMPT },
-            { "role": "user", "content": prompt.to_string() },
+            { "role": "system", "content": system },
+            { "role": "user", "content": user },
         ],
     });
 
@@ -292,9 +300,13 @@ async fn request_plan(key: &str, prompt: &serde_json::Value) -> Result<Plan, Str
     let content = payload
         .pointer("/choices/0/message/content")
         .and_then(serde_json::Value::as_str)
-        .ok_or("DeepSeek returned no plan")?;
+        .ok_or("DeepSeek returned an empty reply")?;
     serde_json::from_str(content)
-        .map_err(|error| format!("DeepSeek returned an invalid plan: {error}"))
+        .map_err(|error| format!("DeepSeek returned invalid JSON: {error}"))
+}
+
+async fn request_plan(key: &str, prompt: &serde_json::Value) -> Result<Plan, String> {
+    deepseek_json(key, SYSTEM_PROMPT, prompt.to_string()).await
 }
 
 async fn plan_zoom_segments(
@@ -340,6 +352,32 @@ pub async fn generate_ai_zoom_segments(
         &project,
     )
     .await
+}
+
+/// Flags a fresh recording so the editor replaces its click zooms with an AI
+/// plan the first time it opens; planning takes 10-20 s, too long to hold up
+/// the recording finishing.
+pub(crate) fn mark_pending(app: &AppHandle, project_path: &Path) {
+    if api_key(app).is_none() {
+        return;
+    }
+    if let Err(error) = std::fs::write(project_path.join(PENDING_MARKER), b"") {
+        warn!(%error, "Could not mark the recording for AI zoom planning");
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn take_pending_ai_zoom(
+    app: AppHandle,
+    editor_instance: WindowEditorInstance,
+) -> Result<bool, String> {
+    let marker = editor_instance.project_path.join(PENDING_MARKER);
+    if !marker.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_file(&marker).map_err(|error| error.to_string())?;
+    Ok(api_key(&app).is_some())
 }
 
 #[cfg(test)]

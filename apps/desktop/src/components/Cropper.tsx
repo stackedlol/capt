@@ -249,7 +249,7 @@ export function Cropper(
 		snapToRatioEnabled?: boolean;
 		useBackdropFilter?: boolean;
 		allowLightMode?: boolean;
-		appearance?: "editor";
+		appearance?: "editor" | "minimal";
 		snapToAlignmentEnabled?: boolean;
 	}>,
 ) {
@@ -1137,7 +1137,10 @@ export function Cropper(
 		<div
 			ref={containerRef}
 			class="relative w-full h-full select-none overscroll-contain focus:outline-hidden touch-none"
-			classList={{ "cropper-editor": props.appearance === "editor" }}
+			classList={{
+				"cropper-editor": props.appearance === "editor",
+				"cropper-minimal": props.appearance === "minimal",
+			}}
 			style={{
 				cursor: cursorStyle() ?? (props.aspectRatio ? "default" : "crosshair"),
 			}}
@@ -1174,7 +1177,11 @@ export function Cropper(
 
 			{/* Occluder */}
 			<div
-				class="absolute inset-0 *:absolute *:bg-black/45 *:pointer-events-none"
+				class="absolute inset-0 *:absolute *:pointer-events-none"
+				classList={{
+					"*:bg-black/45": props.appearance !== "minimal",
+					"*:bg-black/30": props.appearance === "minimal",
+				}}
 				aria-hidden="true"
 			>
 				<div ref={occLeftRef} class="top-0 left-0 h-full" />
@@ -1235,7 +1242,9 @@ export function Cropper(
 						exitClass="opacity-100"
 						exitToClass="opacity-0"
 					>
-						<Show when={mouseState.drag !== null}>
+						<Show
+							when={mouseState.drag !== null || props.appearance === "minimal"}
+						>
 							<div class="cropper-thirds pointer-events-none *:absolute *:border-white/40">
 								<div class="left-0 w-full border-t border-b pointer-events-none h-[calc(100%/3)] top-[calc(100%/3)]" />
 								<div class="top-0 h-full border-l border-r pointer-events-none w-[calc(100%/3)] left-[calc(100%/3)]" />
@@ -1272,43 +1281,61 @@ export function Cropper(
 									aria-label={`Resize ${handle.direction}`}
 									aria-describedby="cropper-aspect"
 								>
-									<svg
-										aria-hidden="true"
-										class="absolute pointer-events-none drop-shadow-xs shadow-black"
-										classList={{
-											"size-1": boundsTooSmall(),
-											"size-6": !boundsTooSmall(),
-										}}
-										viewBox="0 0 16 16"
-										fill="none"
-										stroke="white"
-										stroke-width="4"
-										stroke-linecap="square"
-										style={{
-											...(handle.x === "l"
-												? { left: "9px" }
-												: { right: "9px" }),
-											...(handle.y === "t"
-												? { top: "9px" }
-												: { bottom: "9px" }),
-											filter:
-												props.appearance === "editor"
-													? undefined
-													: `drop-shadow(${handle.x === "l" ? "-3px" : "3px"} ${handle.y === "t" ? "-3px" : "3px"} 5px rgba(0, 0, 0, 0.3))`,
-										}}
+									<Show
+										when={props.appearance !== "minimal"}
+										fallback={
+											<span
+												class="cropper-dot"
+												style={{
+													...(handle.x === "l"
+														? { left: "12px" }
+														: { right: "12px" }),
+													...(handle.y === "t"
+														? { top: "12px" }
+														: { bottom: "12px" }),
+													translate: `${handle.x === "l" ? "-50%" : "50%"} ${handle.y === "t" ? "-50%" : "50%"}`,
+												}}
+											/>
+										}
 									>
-										<path
-											d={
-												handle.x === "l" && handle.y === "t"
-													? "M0 0 H12 M0 0 V12"
-													: handle.x === "r" && handle.y === "t"
-														? "M16 0 H4 M16 0 V12"
-														: handle.x === "r" && handle.y === "b"
-															? "M16 16 H4 M16 16 V4"
-															: "M0 16 H12 M0 16 V4"
-											}
-										/>
-									</svg>
+										<svg
+											aria-hidden="true"
+											class="absolute pointer-events-none drop-shadow-xs shadow-black"
+											classList={{
+												"size-1": boundsTooSmall(),
+												"size-6": !boundsTooSmall(),
+											}}
+											viewBox="0 0 16 16"
+											fill="none"
+											stroke="white"
+											stroke-width="4"
+											stroke-linecap="square"
+											style={{
+												...(handle.x === "l"
+													? { left: "9px" }
+													: { right: "9px" }),
+												...(handle.y === "t"
+													? { top: "9px" }
+													: { bottom: "9px" }),
+												filter:
+													props.appearance === "editor"
+														? undefined
+														: `drop-shadow(${handle.x === "l" ? "-3px" : "3px"} ${handle.y === "t" ? "-3px" : "3px"} 5px rgba(0, 0, 0, 0.3))`,
+											}}
+										>
+											<path
+												d={
+													handle.x === "l" && handle.y === "t"
+														? "M0 0 H12 M0 0 V12"
+														: handle.x === "r" && handle.y === "t"
+															? "M16 0 H4 M16 0 V12"
+															: handle.x === "r" && handle.y === "b"
+																? "M16 16 H4 M16 16 V4"
+																: "M0 16 H12 M0 16 V4"
+												}
+											/>
+										</svg>
+									</Show>
 								</button>
 							) : (
 								<button
@@ -1368,6 +1395,9 @@ export function Cropper(
 								>
 									<Show when={props.appearance === "editor"}>
 										<span class="cropper-edge-grip" />
+									</Show>
+									<Show when={props.appearance === "minimal"}>
+										<span class="cropper-dot cropper-dot-center" />
 									</Show>
 								</button>
 							)

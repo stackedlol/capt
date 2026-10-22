@@ -1,5 +1,6 @@
 #![recursion_limit = "256"]
 
+mod ai_fx;
 mod ai_zoom;
 mod api;
 mod audio;
@@ -57,6 +58,7 @@ mod stop_editor_benchmark;
 mod target_select_overlay;
 mod thumbnails;
 mod tray;
+mod unsplash;
 mod update_project_names;
 mod upload;
 pub mod web_api;
@@ -1768,6 +1770,12 @@ impl App {
             RecordingState::Active(recording) => Some(recording),
             _ => None,
         }
+    }
+
+    // While a recording is starting or running only the recording bar stays on
+    // screen; webview requests to bring the main window back are refused.
+    pub fn recording_hides_main_window(&self) -> bool {
+        !matches!(self.recording_state, RecordingState::None)
     }
 
     pub fn is_recording_active_or_pending(&self) -> bool {
@@ -5828,6 +5836,16 @@ async fn show_window(app: AppHandle, window: ShowCapWindow) -> Result<(), String
         return Ok(());
     }
 
+    if matches!(window, ShowCapWindow::Main { .. })
+        && app
+            .state::<ArcLock<App>>()
+            .read()
+            .await
+            .recording_hides_main_window()
+    {
+        return Ok(());
+    }
+
     window.show(&app).await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -6304,6 +6322,11 @@ fn specta_builder() -> tauri_specta::Builder {
             get_system_diagnostics,
             perf_stats::get_performance_stats,
             ai_zoom::generate_ai_zoom_segments,
+            ai_zoom::take_pending_ai_zoom,
+            ai_fx::generate_ai_fx_chain,
+            unsplash::unsplash_search,
+            unsplash::unsplash_pick,
+            unsplash::unsplash_attribution,
             diagnostics::run_diagnostic,
             diagnostics::reveal_diagnostic_report,
             cli::get_cli_install_status,

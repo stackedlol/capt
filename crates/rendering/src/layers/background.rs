@@ -343,7 +343,6 @@ pub enum Inner {
     ColorOrGradient {
         value: ColorOrGradient,
         pattern: [f32; 4],
-        #[allow(unused)]
         buffer: wgpu::Buffer,
         bind_group: wgpu::BindGroup,
     },
@@ -472,12 +471,23 @@ impl BackgroundLayer {
                     }
                 };
             }
-            Background::Color(color) => match &self.inner {
+            Background::Color(color) => match &mut self.inner {
                 Some(Inner::ColorOrGradient {
                     value: ColorOrGradient::Color(current_color),
                     pattern: current_pattern,
+                    buffer,
                     ..
-                }) if &color == current_color && *current_pattern == pattern => {}
+                }) if &color == current_color
+                    && same_pattern_except_time(current_pattern, &pattern) =>
+                {
+                    if *current_pattern != pattern {
+                        let data = GradientOrColorUniforms::from(Background::Color(color))
+                            .with_pattern(pattern);
+                        queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[data]));
+                        *current_pattern = pattern;
+                        self.generation += 1;
+                    }
+                }
                 _ => {
                     let buffer = GradientOrColorUniforms::from(background)
                         .with_pattern(pattern)
@@ -491,12 +501,24 @@ impl BackgroundLayer {
                     });
                 }
             },
-            Background::Gradient(gradient) => match &self.inner {
+            Background::Gradient(gradient) => match &mut self.inner {
                 Some(Inner::ColorOrGradient {
                     value: ColorOrGradient::Gradient(current_gradient),
                     pattern: current_pattern,
+                    buffer,
                     ..
-                }) if &gradient == current_gradient && *current_pattern == pattern => {}
+                }) if &gradient == current_gradient
+                    && same_pattern_except_time(current_pattern, &pattern) =>
+                {
+                    if *current_pattern != pattern {
+                        let data =
+                            GradientOrColorUniforms::from(Background::Gradient(gradient.clone()))
+                                .with_pattern(pattern);
+                        queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[data]));
+                        *current_pattern = pattern;
+                        self.generation += 1;
+                    }
+                }
                 _ => {
                     let buffer = GradientOrColorUniforms::from(background)
                         .with_pattern(pattern)
@@ -519,6 +541,8 @@ impl BackgroundLayer {
     /// every frame; `None` for animated backgrounds.
     pub fn static_generation(&self) -> Option<u64> {
         match &self.inner {
+            // Animated pattern kinds (4+) redraw every frame.
+            Some(Inner::ColorOrGradient { pattern, .. }) if pattern[0] >= 4.0 => None,
             Some(Inner::Image { .. } | Inner::ColorOrGradient { .. }) => Some(self.generation),
             _ => None,
         }
@@ -714,12 +738,25 @@ fn pattern_uniform(uniforms: &ProjectUniforms) -> [f32; 4] {
         return [0.0; 4];
     }
     let px_scale = (uniforms.output_size.1 as f32 / 1080.0).max(0.25);
+    // Animated patterns take output time from the frame index, so preview and
+    // export draw identical frames for the same moment.
+    let time = if pattern.kind.is_animated() {
+        uniforms.frame_number as f32 / uniforms.frame_rate.max(1) as f32
+    } else {
+        0.0
+    };
     [
         kind,
         (pattern.scale_clamped() * px_scale).round().max(1.0),
         pattern.strength_clamped(),
-        0.0,
+        time,
     ]
+}
+
+/// Animated patterns keep everything but `pattern.w` (time) fixed between
+/// frames; those only need the existing uniform buffer rewritten.
+fn same_pattern_except_time(a: &[f32; 4], b: &[f32; 4]) -> bool {
+    a[..3] == b[..3]
 }
 
 impl GradientOrColorUniforms {

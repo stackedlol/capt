@@ -12,6 +12,7 @@ import {
 	Show,
 } from "solid-js";
 import toast from "solid-toast";
+import { DotGridLoader } from "~/components/DotGridLoader";
 
 import { commands, type ImportedAudioTrack } from "~/utils/tauri";
 import { AUDIO_IMPORT_EXTENSIONS } from "./audio";
@@ -363,9 +364,7 @@ export function AudioLibraryPanel(props: {
 										>
 											<Show
 												when={!isBusy()}
-												fallback={
-													<div class="rounded-sm border-2 animate-spin size-2.5 border-white/40 border-t-white" />
-												}
+												fallback={<DotGridLoader class="size-2.5 text-white" />}
 											>
 												<Show
 													when={isReplace()}
@@ -395,9 +394,7 @@ export function AudioLibraryPanel(props: {
 				<span class="flex justify-center items-center mb-0.5 rounded-sm size-9 bg-gray-3 text-gray-11">
 					<Show
 						when={!uploading()}
-						fallback={
-							<div class="rounded-sm border-2 animate-spin size-4 border-gray-6 border-t-gray-11" />
-						}
+						fallback={<DotGridLoader class="size-4 text-gray-11" />}
 					>
 						<IconLucideUpload class="size-4" />
 					</Show>

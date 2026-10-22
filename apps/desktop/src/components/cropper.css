@@ -60,3 +60,30 @@
 	height: 1px;
 	width: 100%;
 }
+
+/* Screen-area selector: hairline dashed frame, faint thirds, small dot grips. */
+.cropper-minimal .cropper-region {
+	border: 1px dashed rgb(255 255 255 / 0.6);
+}
+
+.cropper-minimal .cropper-thirds > div {
+	border-style: dashed;
+	border-color: rgb(255 255 255 / 0.22);
+}
+
+.cropper-dot {
+	position: absolute;
+	width: 11px;
+	height: 11px;
+	border: 1.5px solid white;
+	border-radius: 3px;
+	background: #1c1c1e;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+	pointer-events: none;
+}
+
+.cropper-dot-center {
+	left: 50%;
+	top: 50%;
+	translate: -50% -50%;
+}

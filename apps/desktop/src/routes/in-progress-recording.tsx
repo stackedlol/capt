@@ -1,3 +1,4 @@
+import { DotGridLoader } from "~/components/DotGridLoader";
 import "@radix-ui/colors/amber.css";
 import "@radix-ui/colors/amber-dark.css";
 import { createTimer } from "@solid-primitives/timer";
@@ -771,23 +772,16 @@ function InProgressRecordingInner() {
 						<div class="flex min-w-0 flex-1 flex-col p-1">
 							<div class="flex min-w-0 flex-1 flex-row items-center justify-between gap-1">
 								<Show
-									when={!isStarting()}
+									when={!isStarting() && !isCountdown()}
 									fallback={
-										<div class="flex flex-row items-center gap-1.5 rounded-lg py-1 px-2 text-gray-12">
-											<IconLucideLoader2 class="size-4 animate-spin" />
-											<span class="truncate text-sm font-medium tabular-nums">
-												Starting
-											</span>
-										</div>
+										<CaptStartingMark
+											count={isCountdown() ? countdownCurrent() : null}
+										/>
 									}
 								>
 									<RecordingControlButton
 										flexible
-										disabled={
-											stopRequested() ||
-											stopRecording.isPending ||
-											isCountdown()
-										}
+										disabled={stopRequested() || stopRecording.isPending}
 										class="flex min-w-0 flex-1 flex-row items-center gap-1 rounded-lg py-1 px-1.5 text-red-300 transition-colors duration-100 hover:bg-red-500/8 active:bg-red-500/12 disabled:opacity-60 disabled:hover:bg-transparent"
 										type="button"
 										onPointerDown={(event) => {
@@ -803,64 +797,14 @@ function InProgressRecordingInner() {
 										<IconCapStopCircle class="size-5 shrink-0" />
 										<span class="truncate text-sm font-medium tabular-nums">
 											<Show
-												when={!isCountdown()}
-												fallback={
-													<div class="relative inline-block h-[1.5em] w-[1ch] overflow-hidden align-middle">
-														<TransitionGroup
-															onEnter={(el, done) => {
-																const a = el.animate(
-																	[
-																		{
-																			opacity: 0,
-																			transform: "translateY(-100%)",
-																		},
-																		{ opacity: 1, transform: "translateY(0)" },
-																	],
-																	{
-																		duration: 300,
-																		easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-																	},
-																);
-																a.finished.then(done);
-															}}
-															onExit={(el, done) => {
-																const a = el.animate(
-																	[
-																		{ opacity: 1, transform: "translateY(0)" },
-																		{
-																			opacity: 0,
-																			transform: "translateY(100%)",
-																		},
-																	],
-																	{
-																		duration: 300,
-																		easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-																	},
-																);
-																a.finished.then(done);
-															}}
-														>
-															<For each={[countdownCurrent()]}>
-																{(num) => (
-																	<span class="absolute inset-0 flex items-center justify-center">
-																		{num}
-																	</span>
-																)}
-															</For>
-														</TransitionGroup>
-													</div>
+												when={
+													pausePendingAction() || state().variant === "paused"
 												}
+												fallback={formatTime(adjustedTime() / 1000)}
 											>
-												<Show
-													when={
-														pausePendingAction() || state().variant === "paused"
-													}
-													fallback={formatTime(adjustedTime() / 1000)}
-												>
-													<span role="status" aria-live="polite">
-														{pausePendingAction() ?? "Paused"}
-													</span>
-												</Show>
+												<span role="status" aria-live="polite">
+													{pausePendingAction() ?? "Paused"}
+												</span>
 											</Show>
 										</span>
 									</RecordingControlButton>
@@ -934,7 +878,7 @@ function InProgressRecordingInner() {
 														)
 													}
 												>
-													<IconLucideLoader2 class="size-5 animate-spin motion-reduce:animate-none" />
+													<DotGridLoader class="size-5" />
 												</Show>
 											</ActionButton>
 										)}
@@ -1127,6 +1071,104 @@ function ActionButton(props: ComponentProps<"button">) {
 			)}
 			type="button"
 		/>
+	);
+}
+
+// Perimeter cells of the capt mark's two dotted squares, clockwise from top-left.
+function ringCells(min: number, max: number, step: number) {
+	const cells: [number, number][] = [];
+	for (let x = min; x < max; x += step) cells.push([x, min]);
+	for (let y = min; y < max; y += step) cells.push([max, y]);
+	for (let x = max; x > min; x -= step) cells.push([x, max]);
+	for (let y = max; y > min; y -= step) cells.push([min, y]);
+	return cells;
+}
+
+const OUTER_RING = ringCells(2, 18, 4);
+const INNER_RING = ringCells(6, 14, 4).reverse();
+const CHASE_SECONDS = 1.4;
+const DOT = 2.6;
+
+function CaptChaseRing(props: {
+	cells: [number, number][];
+	tone: number;
+	still: boolean;
+}) {
+	return (
+		<For each={props.cells}>
+			{([x, y], index) => (
+				<rect
+					x={x - DOT / 2}
+					y={y - DOT / 2}
+					width={DOT}
+					height={DOT}
+					rx={0.5}
+					fill="var(--navy-9)"
+					opacity={props.tone}
+				>
+					<Show when={!props.still}>
+						<animate
+							attributeName="opacity"
+							values={`${props.tone};${props.tone * 0.18};${props.tone * 0.18}`}
+							keyTimes="0;0.45;1"
+							dur={`${CHASE_SECONDS}s`}
+							begin={`${(index() / props.cells.length - 1) * CHASE_SECONDS}s`}
+							repeatCount="indefinite"
+						/>
+					</Show>
+				</rect>
+			)}
+		</For>
+	);
+}
+
+function CaptStartingMark(props: { count: number | null }) {
+	const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+	const slide = (from: string, to: string) => (el: Element, done: () => void) =>
+		el
+			.animate(
+				[
+					{ opacity: from === "0" ? 1 : 0, transform: `translateY(${from})` },
+					{ opacity: to === "0" ? 1 : 0, transform: `translateY(${to})` },
+				],
+				{ duration: still ? 0 : 280, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+			)
+			.finished.then(done);
+
+	return (
+		<div
+			role="status"
+			aria-label={
+				props.count === null
+					? "Starting recording"
+					: `Recording starts in ${props.count}`
+			}
+			class="flex min-w-0 flex-1 flex-row items-center gap-2 px-1.5"
+		>
+			<svg viewBox="0 0 20 20" class="size-[18px] shrink-0" aria-hidden="true">
+				<CaptChaseRing cells={OUTER_RING} tone={1} still={still} />
+				<CaptChaseRing cells={INNER_RING} tone={0.5} still={still} />
+			</svg>
+			<span class="text-[13px] font-semibold lowercase tracking-[-0.02em] text-gray-12">
+				capt
+			</span>
+			<Show when={props.count !== null}>
+				<div class="relative ml-auto h-5 w-[1.5ch] overflow-hidden text-[13px] font-semibold tabular-nums text-gray-11">
+					<TransitionGroup
+						onEnter={slide("-100%", "0")}
+						onExit={slide("0", "100%")}
+					>
+						<For each={[props.count]}>
+							{(num) => (
+								<span class="absolute inset-0 flex items-center justify-center">
+									{num}
+								</span>
+							)}
+						</For>
+					</TransitionGroup>
+				</div>
+			</Show>
+		</div>
 	);
 }
 

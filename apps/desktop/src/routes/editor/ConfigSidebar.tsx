@@ -43,6 +43,7 @@ import { createStore, produce } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
 import toast from "solid-toast";
 import { cameraBackgroundOptions } from "~/components/CameraPreviewChrome";
+import { DotGridLoader } from "~/components/DotGridLoader";
 import { Toggle } from "~/components/Toggle";
 import {
 	animatedGradientsStore,
@@ -138,7 +139,9 @@ import { TextSegmentConfig } from "./text-segment-config";
 import type { Camera3DSegment } from "./three-d";
 import { Camera3DShotPanel, camera3DShotSummary } from "./three-d-panel";
 import { heldTimeBefore, holdWindows } from "./timeline-holds";
+import { UnsplashButton, UnsplashCredit } from "./UnsplashPicker";
 import {
+	Collapse,
 	ComingSoonTooltip,
 	EditorButton,
 	Field,
@@ -159,6 +162,9 @@ import { ZoomModeHelper } from "./ZoomModeHelper";
 // paint (Kobalte only mounts the selected tab), and its code is heavy. The
 // render site wraps it in a local <Suspense> so the chunk load stays inside
 // the tab instead of bubbling to the editor's top-level Suspense.
+const UnsplashPicker = lazy(() =>
+	import("./UnsplashPicker").then((m) => ({ default: m.UnsplashPicker })),
+);
 const CaptionsTab = lazy(() =>
 	import("./CaptionsTab").then((m) => ({ default: m.CaptionsTab })),
 );
@@ -535,13 +541,6 @@ function StudioSoundCard() {
 						)}
 					</For>
 				</RadioGroup>
-				<p class="mt-2 text-xs leading-4 text-ed-text-3">
-					{
-						isolationOptions.find(
-							(option) => option.value === project.audio.isolation,
-						)?.description
-					}
-				</p>
 			</Show>
 			<div class="flex flex-row gap-2.5 justify-between items-center pt-3 mt-3 border-t border-ed-line">
 				<span class="text-xs text-ed-text-2">Use for new recordings</span>
@@ -628,8 +627,10 @@ function ConfigSidebarContent() {
 		});
 	};
 
+	// Mouse tracking leads the editor; recordings without cursor data fall
+	// back to the background tab.
 	const [state, setState] = createStore({
-		selectedTab: "background" as
+		selectedTab: (meta().hasRecordedCursorData ? "cursor" : "background") as
 			| "background"
 			| "camera"
 			| "transcript"
@@ -693,6 +694,12 @@ function ConfigSidebarContent() {
 			<KTabs.List class="flex sticky top-0 z-60 flex-row justify-around items-center px-2.5 h-[46px] border-b border-ed-line shrink-0 bg-ed-card">
 				<For
 					each={[
+						{
+							id: TAB_IDS.cursor,
+							icon: IconCapCursor,
+							disabled: !meta().hasRecordedCursorData,
+						},
+						{ id: TAB_IDS.lens, icon: IconLucideAperture },
 						{ id: TAB_IDS.background, icon: IconCapImage },
 						{
 							id: TAB_IDS.camera,
@@ -703,11 +710,6 @@ function ConfigSidebarContent() {
 						},
 						{ id: TAB_IDS.audio, icon: IconCapAudioOn },
 						{
-							id: TAB_IDS.cursor,
-							icon: IconCapCursor,
-							disabled: !meta().hasRecordedCursorData,
-						},
-						{
 							id: TAB_IDS.keyboard,
 							icon: IconLucideKeyboard,
 						},
@@ -715,7 +717,6 @@ function ConfigSidebarContent() {
 							id: TAB_IDS.captions,
 							icon: IconCapMessageBubble,
 						},
-						{ id: TAB_IDS.lens, icon: IconLucideAperture },
 						// { id: "hotkeys" as const, icon: IconCapHotkeys },
 					].filter(
 						(item) =>
@@ -922,53 +923,12 @@ function ConfigSidebarContent() {
 									step={1}
 								/>
 							</Field>
-							<Field
-								inline
-								name="Tilt"
-								value={`${Math.round(
-									(project.cursor.rotationAmount ?? 0.15) * 100,
-								)}%`}
-							>
-								<Slider
-									value={[project.cursor.rotationAmount ?? 0.15]}
-									onChange={(v) => setProject("cursor", "rotationAmount", v[0])}
-									minValue={0}
-									maxValue={1}
-									step={0.01}
-									formatTooltip={(value) => `${Math.round(value * 100)}%`}
-								/>
-							</Field>
-							<CursorRippleSection />
-							<Field inline name="Hide When Idle">
-								<Toggle
-									checked={project.cursor.hideWhenIdle}
-									onChange={(value) =>
-										setProject("cursor", "hideWhenIdle", value)
-									}
-								/>
-							</Field>
-							<Show when={project.cursor.hideWhenIdle}>
-								<Field
-									inline
-									name="Inactivity Delay"
-									value={`${cursorIdleDelay().toFixed(1)}s`}
-								>
-									<Slider
-										value={[cursorIdleDelay()]}
-										onChange={(v) => {
-											const rounded = clampIdleDelay(v[0]);
-											setProject("cursor", "hideWhenIdleDelay", rounded);
-										}}
-										minValue={0.5}
-										maxValue={5}
-										step={0.1}
-										formatTooltip={(value) => `${value.toFixed(1)}s`}
-									/>
-								</Field>
-							</Show>
-							<Field name="Cursor Movement Style">
+							<Field name="Motion">
 								<RadioGroup
-									class="flex flex-col gap-2"
+									class="grid gap-1"
+									style={{
+										"grid-template-columns": `repeat(${CURSOR_ANIMATION_STYLE_OPTIONS.length}, minmax(0, 1fr))`,
+									}}
 									value={project.cursor.animationStyle}
 									onChange={(value) =>
 										applyCursorStylePreset(value as CursorAnimationStyle)
@@ -977,88 +937,129 @@ function ConfigSidebarContent() {
 									{CURSOR_ANIMATION_STYLE_OPTIONS.map((option) => (
 										<RadioGroup.Item
 											value={option.value}
-											class="rounded-lg border border-gray-3 transition-colors data-checked:border-blue-8 data-checked:bg-blue-3/40"
+											title={option.description}
+											class="rounded-[6px] border border-ed-line transition-colors data-checked:border-ed-accent data-checked:bg-ed-ctl"
 										>
 											<RadioGroup.ItemInput class="sr-only" />
-											<RadioGroup.ItemLabel class="flex items-start gap-3 p-3">
-												<RadioGroup.ItemControl class="mt-1 size-4 rounded-sm border border-gray-7 data-checked:border-blue-9 data-checked:bg-blue-9" />
-												<div class="flex flex-col text-left">
-													<span class="text-[13px] font-medium text-ed-text-1">
-														{option.label}
-													</span>
-													<span class="text-[11px] text-ed-text-3">
-														{option.description}
-													</span>
-												</div>
+											<RadioGroup.ItemLabel class="flex justify-center items-center h-[28px] px-1 text-[12px] text-ed-text-2 cursor-pointer">
+												{option.label}
 											</RadioGroup.ItemLabel>
 										</RadioGroup.Item>
 									))}
 								</RadioGroup>
 							</Field>
-							<KCollapsible open={!project.cursor.raw}>
-								<Field inline name="Smooth Movement">
-									<Toggle
-										checked={!project.cursor.raw}
-										onChange={(value) => {
-											setProject("cursor", "raw", !value);
-										}}
+							<Collapse name="More" id="cursor-more">
+								<Field
+									inline
+									name="Tilt"
+									value={`${Math.round(
+										(project.cursor.rotationAmount ?? 0.15) * 100,
+									)}%`}
+								>
+									<Slider
+										value={[project.cursor.rotationAmount ?? 0.15]}
+										onChange={(v) =>
+											setProject("cursor", "rotationAmount", v[0])
+										}
+										minValue={0}
+										maxValue={1}
+										step={0.01}
+										formatTooltip={(value) => `${Math.round(value * 100)}%`}
 									/>
 								</Field>
-								<KCollapsible.Content class="overflow-hidden border-b opacity-0 transition-opacity border-gray-3 animate-collapsible-up data-expanded:animate-collapsible-down data-expanded:opacity-100">
-									{/* if Content has padding or margin the animation doesn't look as good */}
-									<div class="flex flex-col gap-1 pt-2 pb-4">
-										<Field
-											inline
-											name="Tension"
-											value={Math.round(project.cursor.tension)}
-										>
-											<Slider
-												value={[project.cursor.tension]}
-												onChange={(v) => setCursorPhysics("tension", v[0])}
-												minValue={1}
-												maxValue={600}
-												step={1}
-											/>
-										</Field>
-										<Field
-											inline
-											name="Friction"
-											value={project.cursor.friction.toFixed(1)}
-										>
-											<Slider
-												value={[project.cursor.friction]}
-												onChange={(v) => setCursorPhysics("friction", v[0])}
-												minValue={0}
-												maxValue={200}
-												step={0.1}
-											/>
-										</Field>
-										<Field
-											inline
-											name="Mass"
-											value={project.cursor.mass.toFixed(2)}
-										>
-											<Slider
-												value={[project.cursor.mass]}
-												onChange={(v) => setCursorPhysics("mass", v[0])}
-												minValue={0.1}
-												maxValue={15}
-												step={0.01}
-											/>
-										</Field>
-									</div>
-								</KCollapsible.Content>
-							</KCollapsible>
-							<Show when={!isExplicitCursorFamily(project.cursor.type)}>
-								<Field inline name="High Quality SVG Cursors">
+								<CursorRippleSection />
+								<Field inline name="Hide idle">
 									<Toggle
-										checked={project.cursor.useSvg ?? true}
-										onChange={(value) => {
-											setProject("cursor", "useSvg", value);
-										}}
+										checked={project.cursor.hideWhenIdle}
+										onChange={(value) =>
+											setProject("cursor", "hideWhenIdle", value)
+										}
 									/>
 								</Field>
-							</Show>
+								<Show when={project.cursor.hideWhenIdle}>
+									<Field
+										inline
+										name="After"
+										value={`${cursorIdleDelay().toFixed(1)}s`}
+									>
+										<Slider
+											value={[cursorIdleDelay()]}
+											onChange={(v) => {
+												const rounded = clampIdleDelay(v[0]);
+												setProject("cursor", "hideWhenIdleDelay", rounded);
+											}}
+											minValue={0.5}
+											maxValue={5}
+											step={0.1}
+											formatTooltip={(value) => `${value.toFixed(1)}s`}
+										/>
+									</Field>
+								</Show>
+								<KCollapsible open={!project.cursor.raw}>
+									<Field inline name="Smoothing">
+										<Toggle
+											checked={!project.cursor.raw}
+											onChange={(value) => {
+												setProject("cursor", "raw", !value);
+											}}
+										/>
+									</Field>
+									<KCollapsible.Content class="overflow-hidden border-b opacity-0 transition-opacity border-gray-3 animate-collapsible-up data-expanded:animate-collapsible-down data-expanded:opacity-100">
+										{/* if Content has padding or margin the animation doesn't look as good */}
+										<div class="flex flex-col gap-1 pt-2 pb-4">
+											<Field
+												inline
+												name="Tension"
+												value={Math.round(project.cursor.tension)}
+											>
+												<Slider
+													value={[project.cursor.tension]}
+													onChange={(v) => setCursorPhysics("tension", v[0])}
+													minValue={1}
+													maxValue={600}
+													step={1}
+												/>
+											</Field>
+											<Field
+												inline
+												name="Friction"
+												value={project.cursor.friction.toFixed(1)}
+											>
+												<Slider
+													value={[project.cursor.friction]}
+													onChange={(v) => setCursorPhysics("friction", v[0])}
+													minValue={0}
+													maxValue={200}
+													step={0.1}
+												/>
+											</Field>
+											<Field
+												inline
+												name="Mass"
+												value={project.cursor.mass.toFixed(2)}
+											>
+												<Slider
+													value={[project.cursor.mass]}
+													onChange={(v) => setCursorPhysics("mass", v[0])}
+													minValue={0.1}
+													maxValue={15}
+													step={0.01}
+												/>
+											</Field>
+										</div>
+									</KCollapsible.Content>
+								</KCollapsible>
+								<Show when={!isExplicitCursorFamily(project.cursor.type)}>
+									<Field inline name="SVG cursors">
+										<Toggle
+											checked={project.cursor.useSvg ?? true}
+											onChange={(value) => {
+												setProject("cursor", "useSvg", value);
+											}}
+										/>
+									</Field>
+								</Show>
+							</Collapse>
 						</Show>
 
 						{/* <Field name="Animation Style" icon={<IconLucideRabbit />}>
@@ -2165,6 +2166,14 @@ function BackgroundConfig(props: {
 	);
 
 	let fileInput!: HTMLInputElement;
+	const [unsplashOpen, setUnsplashOpen] = createSignal(false);
+	const [unsplashCredit] = createResource(
+		() =>
+			project.background.source.type === "image"
+				? project.background.source.path
+				: null,
+		(path) => commands.unsplashAttribution(path),
+	);
 
 	const setWallpaperSource = (wallpaperPath: string) => {
 		const resumeHistory = projectHistory.pause();
@@ -2572,7 +2581,7 @@ function BackgroundConfig(props: {
 									fallback={
 										<div class="flex col-span-6 justify-center items-center h-32 text-ed-text-2">
 											<div class="flex flex-col gap-2 items-center">
-												<div class="w-6 h-6 rounded-sm border-2 animate-spin border-gray-5 border-t-blue-400" />
+												<DotGridLoader class="size-5" />
 												<span>Loading wallpapers...</span>
 											</div>
 										</div>
@@ -2630,41 +2639,64 @@ function BackgroundConfig(props: {
 									project.background.source.path
 								}
 								fallback={
-									<button
-										type="button"
-										onClick={() => fileInput.click()}
-										class="p-6 bg-ed-card-2 text-[13px] w-full rounded-xl border border-ed-line-strong border-dashed flex flex-col items-center justify-center gap-2 hover:bg-ed-ctl transition-colors duration-100"
-									>
-										<IconCapImage class="text-ed-text-3 size-6" />
-										<span class="text-ed-text-1">
-											Click to select or drag and drop image
-										</span>
-									</button>
+									<div class="flex flex-col gap-2">
+										<button
+											type="button"
+											onClick={() => fileInput.click()}
+											class="p-6 bg-ed-card-2 text-[13px] w-full rounded-xl border border-ed-line-strong border-dashed flex flex-col items-center justify-center gap-2 hover:bg-ed-ctl transition-colors duration-100"
+										>
+											<IconCapImage class="text-ed-text-3 size-6" />
+											<span class="text-ed-text-1">
+												Click to select or drag and drop image
+											</span>
+										</button>
+										<UnsplashButton onClick={() => setUnsplashOpen(true)} />
+									</div>
 								}
 							>
 								{(source) => (
-									<div class="overflow-hidden relative w-full h-48 rounded-md border border-gray-3 group">
-										<img
-											src={convertFileSrc(source())}
-											class="object-cover w-full h-full"
-											alt="Selected background"
-										/>
-										<div class="absolute top-2 right-2">
-											<button
-												type="button"
-												onClick={() =>
-													setProject("background", "source", {
-														type: "image",
-														path: null,
-													})
-												}
-												class="p-2 text-white rounded-sm transition-colors bg-black/50 hover:bg-black/70"
-											>
-												<IconCapCircleX class="w-4 h-4" />
-											</button>
+									<div class="flex flex-col gap-2">
+										<div class="overflow-hidden relative w-full h-48 rounded-md border border-gray-3 group">
+											<img
+												src={convertFileSrc(source())}
+												class="object-cover w-full h-full"
+												alt="Selected background"
+											/>
+											<div class="absolute top-2 right-2">
+												<button
+													type="button"
+													onClick={() =>
+														setProject("background", "source", {
+															type: "image",
+															path: null,
+														})
+													}
+													class="p-2 text-white rounded-sm transition-colors bg-black/50 hover:bg-black/70"
+												>
+													<IconCapCircleX class="w-4 h-4" />
+												</button>
+											</div>
 										</div>
+										<Show when={unsplashCredit()}>
+											{(credit) => <UnsplashCredit attribution={credit()} />}
+										</Show>
+										<UnsplashButton onClick={() => setUnsplashOpen(true)} />
 									</div>
 								)}
+							</Show>
+							<Show when={unsplashOpen()}>
+								<Suspense>
+									<UnsplashPicker
+										open={unsplashOpen()}
+										onOpenChange={setUnsplashOpen}
+										onPick={(pick) => {
+											setProject("background", "source", {
+												type: "image",
+												path: pick.path,
+											});
+										}}
+									/>
+								</Suspense>
 							</Show>
 							<input
 								type="file"
@@ -2816,20 +2848,6 @@ function BackgroundConfig(props: {
 				<SectionLabel name="Layout" />
 				<Field
 					inline
-					name="Blur"
-					value={`${project.background.blur.toFixed(1)}%`}
-				>
-					<Slider
-						value={[project.background.blur]}
-						onChange={(v) => setProject("background", "blur", v[0])}
-						minValue={0}
-						maxValue={100}
-						step={0.1}
-						formatTooltip="%"
-					/>
-				</Field>
-				<Field
-					inline
 					name="Padding"
 					value={`${project.background.padding.toFixed(1)}%`}
 				>
@@ -2842,19 +2860,6 @@ function BackgroundConfig(props: {
 						formatTooltip="%"
 					/>
 				</Field>
-				<Show when={project.background.displayPosition}>
-					<div class="flex gap-2 justify-between items-center">
-						<span class="text-[11px] text-ed-text-3">
-							Custom screen position (dragged on canvas)
-						</span>
-						<EditorButton
-							size="sm"
-							onClick={() => setProject("background", "displayPosition", null)}
-						>
-							Reset
-						</EditorButton>
-					</div>
-				</Show>
 				<Field
 					inline
 					name="Corners"
@@ -2869,107 +2874,120 @@ function BackgroundConfig(props: {
 						formatTooltip="%"
 					/>
 				</Field>
-				<Field inline name="Corner Style">
-					<CornerStyleSelect
-						value={project.background.roundingType}
-						onChange={(value) =>
-							setProject("background", "roundingType", value)
-						}
+				<Field inline name="Keep border on zoom">
+					<Toggle
+						checked={project.background.zoomWithinFrame ?? true}
+						onChange={(v) => setProject("background", "zoomWithinFrame", v)}
 					/>
 				</Field>
-				<Show when={!selectedStyle()}>
+				<Collapse name="More" id="background-more">
 					<Field
 						inline
-						name="Motion Blur"
-						value={`${Math.round(
-							(project.screenMotionBlur ??
-								project.cursor.motionBlur ??
-								DEFAULT_MOTION_BLUR) * 100,
-						)}%`}
+						name="Blur"
+						value={`${project.background.blur.toFixed(1)}%`}
 					>
 						<Slider
-							value={[
-								project.screenMotionBlur ??
-									project.cursor.motionBlur ??
-									DEFAULT_MOTION_BLUR,
-							]}
-							onChange={(v) => {
-								const value = v[0] ?? 0;
-								batch(() => {
-									setProject("cursor", "motionBlur", value);
-									setProject("screenMotionBlur", value);
-								});
-							}}
+							value={[project.background.blur]}
+							onChange={(v) => setProject("background", "blur", v[0])}
 							minValue={0}
-							maxValue={1}
-							step={0.01}
-							formatTooltip={(value) => `${Math.round(value * 100)}%`}
+							maxValue={100}
+							step={0.1}
+							formatTooltip="%"
 						/>
 					</Field>
-				</Show>
-				<Field inline name="Border">
-					<Toggle
-						checked={project.background.border?.enabled ?? false}
-						onChange={(enabled) => {
-							const prev = project.background.border ?? {
-								enabled: false,
-								width: 5.0,
-								color: [0, 0, 0],
-								opacity: 50.0,
-							};
-
-							if (props.scrollRef && enabled) {
-								setTimeout(
-									() =>
-										props.scrollRef.scrollTo({
-											top: props.scrollRef.scrollHeight,
-											behavior: "smooth",
-										}),
-									100,
-								);
-							}
-
-							setProject("background", "border", {
-								...prev,
-								enabled,
-							});
-						}}
-					/>
-				</Field>
-				<KCollapsible open={project.background.border?.enabled ?? false}>
-					<KCollapsible.Content class="overflow-hidden opacity-0 transition-opacity animate-collapsible-up data-expanded:animate-collapsible-down data-expanded:opacity-100">
-						<div class="flex flex-col gap-2 pb-4">
-							<Field
-								inline
-								name="Border Width"
-								value={`${(project.background.border?.width ?? 5).toFixed(
-									1,
-								)}px`}
+					<Show when={project.background.displayPosition}>
+						<div class="flex gap-2 justify-between items-center">
+							<span class="text-[11px] text-ed-text-3">Moved on canvas</span>
+							<EditorButton
+								size="sm"
+								onClick={() =>
+									setProject("background", "displayPosition", null)
+								}
 							>
-								<Slider
-									value={[project.background.border?.width ?? 5.0]}
-									onChange={(v) =>
-										setProject("background", "border", {
-											...(project.background.border ?? {
-												enabled: true,
-												width: 5.0,
-												color: [0, 0, 0],
-												opacity: 50.0,
+								Reset
+							</EditorButton>
+						</div>
+					</Show>
+					<Field inline name="Corner Style">
+						<CornerStyleSelect
+							value={project.background.roundingType}
+							onChange={(value) =>
+								setProject("background", "roundingType", value)
+							}
+						/>
+					</Field>
+					<Show when={!selectedStyle()}>
+						<Field
+							inline
+							name="Motion Blur"
+							value={`${Math.round(
+								(project.screenMotionBlur ??
+									project.cursor.motionBlur ??
+									DEFAULT_MOTION_BLUR) * 100,
+							)}%`}
+						>
+							<Slider
+								value={[
+									project.screenMotionBlur ??
+										project.cursor.motionBlur ??
+										DEFAULT_MOTION_BLUR,
+								]}
+								onChange={(v) => {
+									const value = v[0] ?? 0;
+									batch(() => {
+										setProject("cursor", "motionBlur", value);
+										setProject("screenMotionBlur", value);
+									});
+								}}
+								minValue={0}
+								maxValue={1}
+								step={0.01}
+								formatTooltip={(value) => `${Math.round(value * 100)}%`}
+							/>
+						</Field>
+					</Show>
+					<Field inline name="Border">
+						<Toggle
+							checked={project.background.border?.enabled ?? false}
+							onChange={(enabled) => {
+								const prev = project.background.border ?? {
+									enabled: false,
+									width: 5.0,
+									color: [0, 0, 0],
+									opacity: 50.0,
+								};
+
+								if (props.scrollRef && enabled) {
+									setTimeout(
+										() =>
+											props.scrollRef.scrollTo({
+												top: props.scrollRef.scrollHeight,
+												behavior: "smooth",
 											}),
-											width: v[0],
-										})
-									}
-									minValue={1}
-									maxValue={20}
-									step={0.1}
-									formatTooltip="px"
-								/>
-							</Field>
-							<Field name="Border Color">
-								<div class="flex flex-col gap-2">
-									<RgbInput
-										value={project.background.border?.color ?? [0, 0, 0]}
-										onChange={(color) =>
+										100,
+									);
+								}
+
+								setProject("background", "border", {
+									...prev,
+									enabled,
+								});
+							}}
+						/>
+					</Field>
+					<KCollapsible open={project.background.border?.enabled ?? false}>
+						<KCollapsible.Content class="overflow-hidden opacity-0 transition-opacity animate-collapsible-up data-expanded:animate-collapsible-down data-expanded:opacity-100">
+							<div class="flex flex-col gap-2 pb-4">
+								<Field
+									inline
+									name="Border Width"
+									value={`${(project.background.border?.width ?? 5).toFixed(
+										1,
+									)}px`}
+								>
+									<Slider
+										value={[project.background.border?.width ?? 5.0]}
+										onChange={(v) =>
 											setProject("background", "border", {
 												...(project.background.border ?? {
 													enabled: true,
@@ -2977,202 +2995,219 @@ function BackgroundConfig(props: {
 													color: [0, 0, 0],
 													opacity: 50.0,
 												}),
-												color,
+												width: v[0],
 											})
 										}
+										minValue={1}
+										maxValue={20}
+										step={0.1}
+										formatTooltip="px"
 									/>
-									<BrandColorsDropdown
-										swatches={props.brandColorSwatches}
-										onSelect={setBackgroundBorderColor}
-									/>
-								</div>
-							</Field>
-							<Field
-								inline
-								name="Border Opacity"
-								value={`${(project.background.border?.opacity ?? 50).toFixed(
-									1,
-								)}%`}
-							>
-								<Slider
-									value={[project.background.border?.opacity ?? 50.0]}
-									onChange={(v) =>
-										setProject("background", "border", {
-											...(project.background.border ?? {
-												enabled: true,
-												width: 5.0,
-												color: [0, 0, 0],
-												opacity: 50.0,
-											}),
-											opacity: v[0],
-										})
-									}
-									minValue={0}
-									maxValue={100}
-									step={0.1}
-									formatTooltip="%"
-								/>
-							</Field>
-						</div>
-					</KCollapsible.Content>
-				</KCollapsible>
-				<Field inline name="MacBook notch">
-					<Toggle
-						checked={project.background.notch?.enabled ?? false}
-						onChange={(enabled) =>
-							setProject("background", "notch", {
-								...(project.background.notch ?? UNPLACED_NOTCH),
-								enabled,
-							})
-						}
-					/>
-				</Field>
-				<KCollapsible open={project.background.notch?.enabled ?? false}>
-					<KCollapsible.Content class="overflow-hidden opacity-0 transition-opacity animate-collapsible-up data-expanded:animate-collapsible-down data-expanded:opacity-100">
-						<div class="flex flex-col gap-2 pb-4">
-							<p class="text-[11px] text-ed-text-3">
-								Draws a MacBook notch over the recording. Recordings made on a
-								Mac with a notch use their own measurements; otherwise start
-								from the size below and adjust to match.
-							</p>
-							<For
-								each={
-									[
-										{ key: "width", name: "Notch Width", max: 0.4 },
-										{ key: "height", name: "Notch Height", max: 0.15 },
-										{ key: "x", name: "Notch Position", max: 1 },
-									] as const
-								}
-							>
-								{(field) => {
-									const notchValue = () =>
-										field.key === "x"
-											? Math.min(
-													project.background.notch?.x ??
-														editorInstance.notchBase.x,
-													notchXMax(),
-												)
-											: (project.background.notch?.[field.key] ??
-												editorInstance.notchBase[field.key]);
-
-									return (
-										<Field
-											inline
-											name={field.name}
-											value={`${(notchValue() * 100).toFixed(1)}%`}
-										>
-											<Slider
-												value={[notchValue()]}
-												onChange={(v) => {
-													const base = editorInstance.notchBase;
-													const prev =
-														project.background.notch ?? UNPLACED_NOTCH;
-													const next: NotchConfiguration = {
-														...prev,
+								</Field>
+								<Field name="Border Color">
+									<div class="flex flex-col gap-2">
+										<RgbInput
+											value={project.background.border?.color ?? [0, 0, 0]}
+											onChange={(color) =>
+												setProject("background", "border", {
+													...(project.background.border ?? {
 														enabled: true,
-													};
-													if (field.key === "x") {
-														next.x = Math.min(v[0], notchXMax());
-													} else {
-														next[field.key] = v[0];
-													}
+														width: 5.0,
+														color: [0, 0, 0],
+														opacity: 50.0,
+													}),
+													color,
+												})
+											}
+										/>
+										<BrandColorsDropdown
+											swatches={props.brandColorSwatches}
+											onSelect={setBackgroundBorderColor}
+										/>
+									</div>
+								</Field>
+								<Field
+									inline
+									name="Border Opacity"
+									value={`${(project.background.border?.opacity ?? 50).toFixed(
+										1,
+									)}%`}
+								>
+									<Slider
+										value={[project.background.border?.opacity ?? 50.0]}
+										onChange={(v) =>
+											setProject("background", "border", {
+												...(project.background.border ?? {
+													enabled: true,
+													width: 5.0,
+													color: [0, 0, 0],
+													opacity: 50.0,
+												}),
+												opacity: v[0],
+											})
+										}
+										minValue={0}
+										maxValue={100}
+										step={0.1}
+										formatTooltip="%"
+									/>
+								</Field>
+							</div>
+						</KCollapsible.Content>
+					</KCollapsible>
+					<Field inline name="MacBook notch">
+						<Toggle
+							checked={project.background.notch?.enabled ?? false}
+							onChange={(enabled) =>
+								setProject("background", "notch", {
+									...(project.background.notch ?? UNPLACED_NOTCH),
+									enabled,
+								})
+							}
+						/>
+					</Field>
+					<KCollapsible open={project.background.notch?.enabled ?? false}>
+						<KCollapsible.Content class="overflow-hidden opacity-0 transition-opacity animate-collapsible-up data-expanded:animate-collapsible-down data-expanded:opacity-100">
+							<div class="flex flex-col gap-2 pb-4">
+								<For
+									each={
+										[
+											{ key: "width", name: "Notch Width", max: 0.4 },
+											{ key: "height", name: "Notch Height", max: 0.15 },
+											{ key: "x", name: "Notch Position", max: 1 },
+										] as const
+									}
+								>
+									{(field) => {
+										const notchValue = () =>
+											field.key === "x"
+												? Math.min(
+														project.background.notch?.x ??
+															editorInstance.notchBase.x,
+														notchXMax(),
+													)
+												: (project.background.notch?.[field.key] ??
+													editorInstance.notchBase[field.key]);
 
-													if (field.key === "width") {
-														// Resize about the centre rather than dragging the
-														// left edge along with the width.
-														const centre =
-															(prev.x ?? base.x) +
-															(prev.width ?? base.width) / 2;
-														next.x = Math.min(
-															Math.max(centre - v[0] / 2, 0),
-															1 - v[0],
-														);
-													}
+										return (
+											<Field
+												inline
+												name={field.name}
+												value={`${(notchValue() * 100).toFixed(1)}%`}
+											>
+												<Slider
+													value={[notchValue()]}
+													onChange={(v) => {
+														const base = editorInstance.notchBase;
+														const prev =
+															project.background.notch ?? UNPLACED_NOTCH;
+														const next: NotchConfiguration = {
+															...prev,
+															enabled: true,
+														};
+														if (field.key === "x") {
+															next.x = Math.min(v[0], notchXMax());
+														} else {
+															next[field.key] = v[0];
+														}
 
-													setProject("background", "notch", next);
-												}}
-												minValue={0}
-												maxValue={field.key === "x" ? notchXMax() : field.max}
-												step={0.001}
-												formatTooltip={(value) =>
-													`${(value * 100).toFixed(1)}%`
-												}
-											/>
-										</Field>
-									);
-								}}
-							</For>
-						</div>
-					</KCollapsible.Content>
-				</KCollapsible>
-				<Field
-					inline
-					name="Shadow"
-					value={`${(project.background.shadow ?? 0).toFixed(1)}%`}
-				>
-					<Slider
-						value={[project.background.shadow ?? 0]}
-						onChange={(v) => {
-							batch(() => {
-								setProject("background", "shadow", v[0]);
-								// Initialize advanced shadow settings if they don't exist and shadow is enabled
-								if (v[0] > 0 && !project.background.advancedShadow) {
-									setProject("background", "advancedShadow", {
+														if (field.key === "width") {
+															// Resize about the centre rather than dragging the
+															// left edge along with the width.
+															const centre =
+																(prev.x ?? base.x) +
+																(prev.width ?? base.width) / 2;
+															next.x = Math.min(
+																Math.max(centre - v[0] / 2, 0),
+																1 - v[0],
+															);
+														}
+
+														setProject("background", "notch", next);
+													}}
+													minValue={0}
+													maxValue={field.key === "x" ? notchXMax() : field.max}
+													step={0.001}
+													formatTooltip={(value) =>
+														`${(value * 100).toFixed(1)}%`
+													}
+												/>
+											</Field>
+										);
+									}}
+								</For>
+							</div>
+						</KCollapsible.Content>
+					</KCollapsible>
+					<Field
+						inline
+						name="Shadow"
+						value={`${(project.background.shadow ?? 0).toFixed(1)}%`}
+					>
+						<Slider
+							value={[project.background.shadow ?? 0]}
+							onChange={(v) => {
+								batch(() => {
+									setProject("background", "shadow", v[0]);
+									// Initialize advanced shadow settings if they don't exist and shadow is enabled
+									if (v[0] > 0 && !project.background.advancedShadow) {
+										setProject("background", "advancedShadow", {
+											size: 50,
+											opacity: 18,
+											blur: 50,
+										});
+									}
+								});
+							}}
+							minValue={0}
+							maxValue={100}
+							step={0.1}
+							formatTooltip="%"
+						/>
+					</Field>
+					<ShadowSettings
+						scrollRef={props.scrollRef}
+						size={{
+							value: [project.background.advancedShadow?.size ?? 50],
+							onChange: (v) => {
+								setProject("background", "advancedShadow", {
+									...(project.background.advancedShadow ?? {
 										size: 50,
 										opacity: 18,
 										blur: 50,
-									});
-								}
-							});
+									}),
+									size: v[0],
+								});
+							},
 						}}
-						minValue={0}
-						maxValue={100}
-						step={0.1}
-						formatTooltip="%"
+						opacity={{
+							value: [project.background.advancedShadow?.opacity ?? 18],
+							onChange: (v) => {
+								setProject("background", "advancedShadow", {
+									...(project.background.advancedShadow ?? {
+										size: 50,
+										opacity: 18,
+										blur: 50,
+									}),
+									opacity: v[0],
+								});
+							},
+						}}
+						blur={{
+							value: [project.background.advancedShadow?.blur ?? 50],
+							onChange: (v) => {
+								setProject("background", "advancedShadow", {
+									...(project.background.advancedShadow ?? {
+										size: 50,
+										opacity: 18,
+										blur: 50,
+									}),
+									blur: v[0],
+								});
+							},
+						}}
 					/>
-				</Field>
-				<ShadowSettings
-					scrollRef={props.scrollRef}
-					size={{
-						value: [project.background.advancedShadow?.size ?? 50],
-						onChange: (v) => {
-							setProject("background", "advancedShadow", {
-								...(project.background.advancedShadow ?? {
-									size: 50,
-									opacity: 18,
-									blur: 50,
-								}),
-								size: v[0],
-							});
-						},
-					}}
-					opacity={{
-						value: [project.background.advancedShadow?.opacity ?? 18],
-						onChange: (v) => {
-							setProject("background", "advancedShadow", {
-								...(project.background.advancedShadow ?? {
-									size: 50,
-									opacity: 18,
-									blur: 50,
-								}),
-								opacity: v[0],
-							});
-						},
-					}}
-					blur={{
-						value: [project.background.advancedShadow?.blur ?? 50],
-						onChange: (v) => {
-							setProject("background", "advancedShadow", {
-								...(project.background.advancedShadow ?? {
-									size: 50,
-									opacity: 18,
-									blur: 50,
-								}),
-								blur: v[0],
-							});
-						},
-					}}
-				/>
+				</Collapse>
 				<Show when={!selectedStyle()}>
 					<ColorCorrectionSection target="screen" scrollRef={props.scrollRef} />
 				</Show>
@@ -3274,7 +3309,7 @@ function CameraConfig(props: { scrollRef: HTMLDivElement }) {
 							<Show when={project.camera.manualPosition}>
 								<div class="flex justify-between items-center mt-3">
 									<span class="text-[11px] text-ed-text-3">
-										Custom position (dragged on canvas)
+										Moved on canvas
 									</span>
 									<EditorButton
 										onClick={() => setProject("camera", "manualPosition", null)}
@@ -4368,8 +4403,7 @@ function ZoomSegmentConfig(props: {
 					<div class="space-y-3">
 						<Show when={!generalSettings.data?.custom_cursor_capture2}>
 							<p class="text-[11px] text-ed-text-3">
-								Auto mode needs cursor capture. Enable "Custom cursor capture
-								(Studio)" in Settings → General.
+								Auto needs cursor capture (Settings → General)
 							</p>
 						</Show>
 						<ZoomModeHelper
@@ -4732,8 +4766,7 @@ function ZoomMultiSegmentConfig(props: {
 					</div>
 					<Show when={!generalSettings.data?.custom_cursor_capture2}>
 						<p class="text-[11px] text-ed-text-3">
-							Auto mode needs cursor capture. Enable "Custom cursor capture
-							(Studio)" in Settings → General.
+							Auto needs cursor capture (Settings → General)
 						</p>
 					</Show>
 					<Show
@@ -4752,8 +4785,7 @@ function ZoomMultiSegmentConfig(props: {
 							/>
 							<Show when={manualPositionsMixed()}>
 								<p class="text-xs text-gray-10">
-									Segments zoom into different spots. Drag to move them all to
-									the same one.
+									Different spots. Drag to align.
 								</p>
 							</Show>
 						</div>
@@ -4821,24 +4853,13 @@ function SyncOffsetsConfig() {
 	return (
 		<Show when={hasAnySource()}>
 			<div class="flex flex-col gap-3.5">
-				<Section name="Sync">
-					<p class="text-[11px] text-ed-text-3">
-						Fine-tune source offsets if audio or camera drifts out of sync with
-						the screen recording.
-					</p>
-				</Section>
+				<Section name="Sync"></Section>
 
 				<For each={editorInstance.recordings.segments}>
 					{(_, index) => (
 						<div class="flex flex-col gap-3.5">
 							<Show when={editorInstance.recordings.segments.length > 1}>
 								<SectionLabel name={`Clip ${index()}`} />
-							</Show>
-							<Show when={clipConfig(index())?.offsetsAutoCalculated === true}>
-								<p class="text-[11px] text-ed-text-3">
-									capt calculated these offsets automatically to keep audio in
-									sync with the video. Adjust them if anything still sounds off.
-								</p>
 							</Show>
 							{meta().hasSystemAudio && (
 								<SourceOffsetField

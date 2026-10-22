@@ -12,11 +12,17 @@ import {
 	For,
 	Show,
 } from "solid-js";
+import {
+	UnsplashButton,
+	UnsplashCredit,
+	UnsplashPicker,
+} from "~/routes/editor/UnsplashPicker";
 import type {
 	BackgroundPattern,
 	BackgroundPatternConfiguration,
 	BackgroundSource,
 } from "~/utils/tauri";
+import { commands } from "~/utils/tauri";
 import IconCapBgBlur from "~icons/cap/bg-blur";
 import IconCapCircleX from "~icons/cap/circle-x";
 import IconCapImage from "~icons/cap/image";
@@ -191,6 +197,14 @@ export function BackgroundSettingsPopover() {
 	});
 
 	let fileInput!: HTMLInputElement;
+	const [unsplashOpen, setUnsplashOpen] = createSignal(false);
+	const [unsplashCredit] = createResource(
+		() =>
+			project.background.source.type === "image"
+				? project.background.source.path
+				: null,
+		(path) => commands.unsplashAttribution(path),
+	);
 
 	const setProjectSource = (source: BackgroundSource) => {
 		setProject("background", "source", source);
@@ -392,42 +406,61 @@ export function BackgroundSettingsPopover() {
 											project.background.source.path
 										}
 										fallback={
-											<button
-												type="button"
-												onClick={() => fileInput.click()}
-												class="p-6 bg-gray-2 text-[13px] w-full rounded-lg border border-gray-5 border-dashed flex flex-col items-center justify-center gap-2 hover:bg-gray-3 transition-colors duration-100"
-											>
-												<IconCapImage class="text-gray-11 size-6" />
-												<span class="text-gray-12">
-													Click to select or drag and drop image
-												</span>
-											</button>
+											<div class="flex flex-col gap-2">
+												<button
+													type="button"
+													onClick={() => fileInput.click()}
+													class="p-6 bg-gray-2 text-[13px] w-full rounded-lg border border-gray-5 border-dashed flex flex-col items-center justify-center gap-2 hover:bg-gray-3 transition-colors duration-100"
+												>
+													<IconCapImage class="text-gray-11 size-6" />
+													<span class="text-gray-12">
+														Click to select or drag and drop image
+													</span>
+												</button>
+												<UnsplashButton onClick={() => setUnsplashOpen(true)} />
+											</div>
 										}
 									>
 										{(source) => (
-											<div class="overflow-hidden relative w-full h-48 rounded-md border border-gray-3 group">
-												<img
-													src={convertFileSrc(source())}
-													class="object-cover w-full h-full"
-													alt="Selected background"
-												/>
-												<div class="absolute top-2 right-2">
-													<button
-														type="button"
-														onClick={() =>
-															setProjectSource({
-																type: "image",
-																path: null,
-															})
-														}
-														class="p-2 text-white rounded-sm transition-colors bg-black/50 hover:bg-black/70"
-													>
-														<IconCapCircleX class="w-4 h-4" />
-													</button>
+											<div class="flex flex-col gap-2">
+												<div class="overflow-hidden relative w-full h-48 rounded-md border border-gray-3 group">
+													<img
+														src={convertFileSrc(source())}
+														class="object-cover w-full h-full"
+														alt="Selected background"
+													/>
+													<div class="absolute top-2 right-2">
+														<button
+															type="button"
+															onClick={() =>
+																setProjectSource({
+																	type: "image",
+																	path: null,
+																})
+															}
+															class="p-2 text-white rounded-sm transition-colors bg-black/50 hover:bg-black/70"
+														>
+															<IconCapCircleX class="w-4 h-4" />
+														</button>
+													</div>
 												</div>
+												<Show when={unsplashCredit()}>
+													{(credit) => (
+														<UnsplashCredit attribution={credit()} />
+													)}
+												</Show>
+												<UnsplashButton onClick={() => setUnsplashOpen(true)} />
 											</div>
 										)}
 									</Show>
+									<UnsplashPicker
+										open={unsplashOpen()}
+										onOpenChange={setUnsplashOpen}
+										onPick={(pick) => {
+											setProjectSource({ type: "image", path: pick.path });
+											ensurePaddingForBackground();
+										}}
+									/>
 									<input
 										type="file"
 										ref={fileInput}

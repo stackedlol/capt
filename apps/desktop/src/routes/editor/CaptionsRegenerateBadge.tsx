@@ -2,6 +2,7 @@ import { cx } from "cva";
 import { createMemo, Show } from "solid-js";
 import { produce } from "solid-js/store";
 import toast from "solid-toast";
+import { DotGridLoader } from "~/components/DotGridLoader";
 import {
 	applyCaptionResultToProject,
 	getSelectedTranscriptionSettings,
@@ -74,28 +75,7 @@ export function CaptionsRegenerateBadge(props: { class?: string }) {
 				>
 					<Show
 						when={!editorState.captions.isGenerating}
-						fallback={
-							<svg
-								class="size-3.5 animate-spin"
-								viewBox="0 0 16 16"
-								fill="none"
-							>
-								<circle
-									cx="8"
-									cy="8"
-									r="6.5"
-									stroke="currentColor"
-									stroke-opacity="0.25"
-									stroke-width="2.5"
-								/>
-								<path
-									d="M14.5 8a6.5 6.5 0 00-6.5-6.5"
-									stroke="currentColor"
-									stroke-width="2.5"
-									stroke-linecap="round"
-								/>
-							</svg>
-						}
+						fallback={<DotGridLoader class="size-3.5" />}
 					>
 						<IconCapCaptions class="size-3.5" />
 					</Show>

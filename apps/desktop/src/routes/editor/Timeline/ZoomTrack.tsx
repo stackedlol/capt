@@ -13,8 +13,10 @@ import {
 } from "solid-js";
 import { produce } from "solid-js/store";
 import toast from "solid-toast";
+import { CaptMark } from "~/components/CaptMark";
 import { generalSettingsStore } from "~/store";
 import { commands } from "~/utils/tauri";
+import { isPlanningAiZoom, planZoomsWithAi } from "../ai-zoom";
 import { useEditorContext } from "../context";
 import { useTimelineContext, useTrackContext } from "./context";
 import {
@@ -60,7 +62,6 @@ export function ZoomTrack(props: {
 	const [creatingSegmentViaDrag, setCreatingSegmentViaDrag] =
 		createSignal(false);
 	const [isGeneratingAutoZoom, setIsGeneratingAutoZoom] = createSignal(false);
-	const [isPlanningAiZoom, setIsPlanningAiZoom] = createSignal(false);
 	const busy = () => isGeneratingAutoZoom() || isPlanningAiZoom();
 	const [isHoveringGenerateZoomButton, setIsHoveringGenerateZoomButton] =
 		createSignal(false);
@@ -102,28 +103,10 @@ export function ZoomTrack(props: {
 		}
 	};
 
-	const handlePlanZoomsWithAi = async () => {
-		setIsPlanningAiZoom(true);
-		const toastId = toast.loading("Planning zooms with AI...");
-		try {
-			const zoomSegments = await commands.generateAiZoomSegments();
-			if (zoomSegments.length === 0) {
-				toast.error("AI found nothing worth zooming into", { id: toastId });
-				return;
-			}
-			setProject("timeline", "zoomSegments", zoomSegments);
-			toast.success(
-				`Planned ${zoomSegments.length} zoom${zoomSegments.length === 1 ? "" : "s"}`,
-				{ id: toastId },
-			);
-		} catch (error) {
-			console.error("AI zoom planning failed:", error);
-			const message = typeof error === "string" ? error : "AI planning failed";
-			toast.error(message, { id: toastId });
-		} finally {
-			setIsPlanningAiZoom(false);
-		}
-	};
+	const handlePlanZoomsWithAi = () =>
+		planZoomsWithAi({
+			apply: (segments) => setProject("timeline", "zoomSegments", segments),
+		});
 
 	const newSegmentMinDuration = () =>
 		Math.max(
@@ -358,7 +341,14 @@ export function ZoomTrack(props: {
 										void handlePlanZoomsWithAi();
 									}}
 								>
-									· {isPlanningAiZoom() ? "Planning..." : "Plan with AI"}
+									<span class="inline-flex items-center gap-1">
+										·
+										<CaptMark
+											state={isPlanningAiZoom() ? "thinking" : "idle"}
+											class="size-3"
+										/>
+										{isPlanningAiZoom() ? "Planning..." : "Plan with AI"}
+									</span>
 								</button>
 								<button
 									type="button"

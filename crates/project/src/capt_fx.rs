@@ -161,7 +161,8 @@ impl TrackerConfiguration {
     }
 }
 
-/// Ordered patterns drawn over a gradient background for stylized screenshots.
+/// Patterns drawn over a color or gradient background. The first three are
+/// static ordered patterns; the rest animate with the video.
 #[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum BackgroundPattern {
@@ -170,6 +171,13 @@ pub enum BackgroundPattern {
     Dither,
     Halftone,
     Ascii,
+    /// Domain-warped flowing field quantized with a 4x4 Bayer matrix, ported
+    /// from the stacked-dither shader.
+    StackedDither,
+    /// The same flowing field drawn as an ASCII brightness ramp.
+    AsciiFlow,
+    /// Faint, nearly vertical dithered lines bent by noise.
+    FlowLines,
 }
 
 impl BackgroundPattern {
@@ -179,7 +187,19 @@ impl BackgroundPattern {
             BackgroundPattern::Dither => 1.0,
             BackgroundPattern::Halftone => 2.0,
             BackgroundPattern::Ascii => 3.0,
+            BackgroundPattern::StackedDither => 4.0,
+            BackgroundPattern::AsciiFlow => 5.0,
+            BackgroundPattern::FlowLines => 6.0,
         }
+    }
+
+    pub fn is_animated(self) -> bool {
+        matches!(
+            self,
+            BackgroundPattern::StackedDither
+                | BackgroundPattern::AsciiFlow
+                | BackgroundPattern::FlowLines
+        )
     }
 }
 
@@ -223,6 +243,182 @@ impl BackgroundPatternConfiguration {
     }
 }
 
+/// One operator in the effects studio chain. Each runs as its own full-frame
+/// pass over the previous one's output, so order matters the way it does in
+/// a TouchDesigner TOP network.
+#[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FxOp {
+    #[default]
+    Pixelate,
+    Wave,
+    Mirror,
+    Kaleidoscope,
+    Fisheye,
+    Transform,
+    RgbSplit,
+    Blur,
+    Glow,
+    Edges,
+    Levels,
+    Hue,
+    Posterize,
+    Threshold,
+    Invert,
+    GradientMap,
+    Tint,
+    Dither,
+    Halftone,
+    Ascii,
+    Scanlines,
+    LedGrid,
+    Grain,
+    Vignette,
+    Glitch,
+    Tilt,
+    Orbit,
+    Dolly,
+    TiltShift,
+    Letterbox,
+    Anamorphic,
+    Halation,
+    LightLeak,
+    FilmGrade,
+    Lens,
+}
+
+impl FxOp {
+    pub fn shader_index(self) -> f32 {
+        self as u32 as f32
+    }
+}
+
+/// What moves a node's mix over time, like a CHOP wired into a TOP.
+#[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FxDrive {
+    #[default]
+    None,
+    Lfo,
+    Strobe,
+    Ramp,
+    Click,
+}
+
+#[derive(Type, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FxNode {
+    pub id: String,
+    pub op: FxOp,
+    pub enabled: bool,
+    pub mix: f32,
+    /// Op-specific parameters, both 0..1.
+    pub a: f32,
+    pub b: f32,
+    pub color: Color,
+    pub palette: LensPalette,
+    pub drive: FxDrive,
+    /// Cycles per second for the periodic drives.
+    pub rate: f32,
+    pub depth: f32,
+}
+
+impl Default for FxNode {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            op: FxOp::default(),
+            enabled: true,
+            mix: 1.0,
+            a: 0.5,
+            b: 0.5,
+            color: [255, 255, 255],
+            palette: LensPalette::Thermal,
+            drive: FxDrive::None,
+            rate: 1.0,
+            depth: 1.0,
+        }
+    }
+}
+
+fn unit(v: f32, fallback: f32) -> f32 {
+    if v.is_finite() {
+        v.clamp(0.0, 1.0)
+    } else {
+        fallback
+    }
+}
+
+impl FxNode {
+    pub const RATE_RANGE: (f32, f32) = (0.05, 12.0);
+
+    pub fn a_clamped(&self) -> f32 {
+        unit(self.a, 0.5)
+    }
+
+    pub fn b_clamped(&self) -> f32 {
+        unit(self.b, 0.5)
+    }
+
+    pub fn drive_signal(&self, time: f32, click_pulse: f32) -> f32 {
+        let rate = if self.rate.is_finite() {
+            self.rate.clamp(Self::RATE_RANGE.0, Self::RATE_RANGE.1)
+        } else {
+            1.0
+        };
+        let phase = (time * rate).rem_euclid(1.0);
+        match self.drive {
+            FxDrive::None => 1.0,
+            FxDrive::Lfo => 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos(),
+            FxDrive::Strobe => {
+                if phase < 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            FxDrive::Ramp => phase,
+            FxDrive::Click => unit(click_pulse, 0.0),
+        }
+    }
+
+    /// The mix after the drive, at `time` seconds into the video.
+    pub fn mix_at(&self, time: f32, click_pulse: f32) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+        let depth = unit(self.depth, 1.0);
+        let signal = self.drive_signal(time, click_pulse);
+        unit(self.mix, 0.0) * (1.0 - depth + depth * signal)
+    }
+}
+
+#[derive(Type, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FxStackConfiguration {
+    pub enabled: bool,
+    pub nodes: Vec<FxNode>,
+}
+
+impl FxStackConfiguration {
+    pub const MAX_NODES: usize = 16;
+
+    pub fn live_nodes(&self) -> impl Iterator<Item = &FxNode> {
+        self.nodes
+            .iter()
+            .filter(move |node| self.enabled && node.enabled && node.mix > 0.0)
+            .take(Self::MAX_NODES)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.live_nodes().next().is_some()
+    }
+
+    pub fn uses_click_drive(&self) -> bool {
+        self.live_nodes().any(|node| node.drive == FxDrive::Click)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +452,49 @@ mod tests {
             assert!(p.stops().is_some());
         }
         assert!(LensPalette::None.stops().is_none());
+    }
+
+    #[test]
+    fn fx_stack_is_inactive_without_live_nodes() {
+        let mut stack = FxStackConfiguration::default();
+        assert!(!stack.is_active());
+        stack.nodes.push(FxNode::default());
+        assert!(!stack.is_active());
+        stack.enabled = true;
+        assert!(stack.is_active());
+        stack.nodes[0].enabled = false;
+        assert!(!stack.is_active());
+    }
+
+    #[test]
+    fn fx_drives_scale_the_mix() {
+        let node = FxNode {
+            mix: 0.8,
+            drive: FxDrive::Strobe,
+            rate: 1.0,
+            depth: 1.0,
+            ..Default::default()
+        };
+        assert!((node.mix_at(0.25, 0.0) - 0.8).abs() < 1e-6);
+        assert_eq!(node.mix_at(0.75, 0.0), 0.0);
+
+        let half_depth = FxNode {
+            depth: 0.5,
+            ..node.clone()
+        };
+        assert!((half_depth.mix_at(0.75, 0.0) - 0.4).abs() < 1e-6);
+
+        let click = FxNode {
+            drive: FxDrive::Click,
+            ..node
+        };
+        assert!((click.mix_at(3.0, 0.5) - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fx_op_indices_match_the_shader_order() {
+        assert_eq!(FxOp::Pixelate.shader_index(), 0.0);
+        assert_eq!(FxOp::Glitch.shader_index(), 24.0);
+        assert_eq!(FxOp::Lens.shader_index(), 34.0);
     }
 }

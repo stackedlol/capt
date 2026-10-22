@@ -15,6 +15,7 @@ import Tooltip from "~/components/Tooltip";
 import CaptionControlsMacOS from "~/components/titlebar/controls/CaptionControlsMacOS";
 import CaptionControlsWindows11 from "~/components/titlebar/controls/CaptionControlsWindows11";
 import { commands } from "~/utils/tauri";
+import IconLucideWorkflow from "~icons/lucide/workflow";
 import { useEditorContext } from "./context";
 import PresetsDropdown from "./PresetsDropdown";
 import { createRecordingTitleSave } from "./recording-title-save";
@@ -82,6 +83,11 @@ export function Header(props: {
 	const isClipsOpen = createMemo(() => {
 		const d = dialog();
 		return "type" in d && d.type === "clips" && d.open;
+	});
+
+	const isFxOpen = createMemo(() => {
+		const d = dialog();
+		return "type" in d && d.type === "fx" && d.open;
 	});
 
 	const [titleReadOnly, setTitleReadOnly] = createSignal(false);
@@ -195,6 +201,22 @@ export function Header(props: {
 					}}
 				>
 					<span class="max-[1200px]:hidden">Clips</span>
+				</EditorButton>
+				<EditorButton
+					title="FX Studio"
+					aria-label="FX Studio"
+					class={cx(isFxOpen() && "bg-ed-ctl-hover text-ed-text-1")}
+					leftIcon={<IconLucideWorkflow />}
+					onClick={() => {
+						clearTimelineSelection();
+						if (isFxOpen()) {
+							setDialog((d) => ({ ...d, open: false }));
+						} else {
+							setDialog({ type: "fx", open: true });
+						}
+					}}
+				>
+					<span class="max-[1200px]:hidden">FX</span>
 				</EditorButton>
 				<Show when={hasTranscript()}>
 					<EditorButton

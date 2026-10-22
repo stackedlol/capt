@@ -35,6 +35,7 @@ import "./styles.css";
 import { defaultCaptionSettings } from "~/store/captions";
 import { defaultKeyboardSettings } from "~/store/keyboard";
 import { commands } from "~/utils/tauri";
+import { isPlanningAiZoom, planZoomsWithAi } from "../ai-zoom";
 import type { AudioTrackSegment } from "../audio";
 import {
 	applyCaptionResultToProject,
@@ -1617,6 +1618,19 @@ export function Timeline(props: {
 								}
 								deleteLabel="Clear all"
 								deleteTitle="Delete all zoom segments"
+								action={
+									meta().hasRecordedCursorData && !isPlanningAiZoom()
+										? {
+												title: "Replan zooms with AI",
+												icon: <IconLucideSparkles class="size-3.5" />,
+												onClick: () =>
+													void planZoomsWithAi({
+														apply: (segments) =>
+															setProject("timeline", "zoomSegments", segments),
+													}),
+											}
+										: undefined
+								}
 							>
 								<ZoomTrack
 									onDragStateChanged={(v) => {
@@ -1684,6 +1698,7 @@ function TrackRow(props: {
 	onDelete?: () => void;
 	deleteLabel?: string;
 	deleteTitle?: string;
+	action?: { title: string; icon: JSX.Element; onClick: () => void };
 	onContextMenu?: (e: MouseEvent) => void;
 }) {
 	const { project, setProject, editorState, setEditorState } =
@@ -2060,12 +2075,36 @@ function TrackRow(props: {
 									? "text-ed-text-1"
 									: "text-ed-text-2 group-hover/row:text-ed-text-1",
 							)}
-							classList={{ "group-hover/icon:pr-5": !!props.onDelete }}
+							classList={{
+								"group-hover/icon:pr-5": !!props.onDelete !== !!props.action,
+								"group-hover/icon:pr-10": !!props.onDelete && !!props.action,
+							}}
 						>
 							{props.label}
 						</span>
 					</Show>
 				</button>
+				<Show when={props.action}>
+					{(action) => (
+						<button
+							type="button"
+							class="absolute top-1/2 z-30 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-ed-text-3 opacity-0 transition-opacity hover:bg-ed-ctl-active hover:text-ed-text-1 group-hover/icon:opacity-100 focus-visible:opacity-100"
+							classList={{
+								"right-5": !!props.onDelete,
+								"right-0": !props.onDelete,
+							}}
+							aria-label={action().title}
+							title={action().title}
+							onClick={(e) => {
+								e.stopPropagation();
+								action().onClick();
+							}}
+							onMouseDown={(e) => e.stopPropagation()}
+						>
+							{action().icon}
+						</button>
+					)}
+				</Show>
 				<Show when={props.onDelete}>
 					<button
 						type="button"

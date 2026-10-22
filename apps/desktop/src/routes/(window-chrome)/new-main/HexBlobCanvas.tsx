@@ -1,29 +1,29 @@
 import { cx } from "cva";
 import { onCleanup, onMount } from "solid-js";
 
-export type BlobCell = {
+export type BlobShape = {
 	x: number;
 	y: number;
 	apothem: number;
-	state: 0 | 1 | 2;
-};
-
-export type BlobFrame = {
-	cells: BlobCell[];
-	cursor: { x: number; y: number } | null;
-	time: number;
+	corner: number;
+	vx: number;
+	vy: number;
+	hover: number;
+	selected: number;
 };
 
 export type BlobRenderer = {
-	draw: (frame: BlobFrame) => void;
+	draw: (shapes: readonly BlobShape[], count: number) => void;
 	resize: () => void;
 	dispose: () => void;
 };
 
-const MAX_CELLS = 8;
-const CORNER = 6;
-const SMOOTH = 9;
-const CURSOR_APOTHEM = 6;
+export const MAX_BLOBS = 8;
+const SMOOTH_REST = 12;
+const SMOOTH_MOTION = 28;
+const SMOOTH_SPEED = 320;
+const MAX_STRETCH = 0.12;
+const STRETCH_SPEED = 450;
 
 const THEME_COLORS = {
 	u_fill: "#ffffff",
@@ -43,12 +43,10 @@ precision highp float;
 
 uniform vec2 u_size;
 uniform float u_dpr;
-uniform float u_time;
 uniform float u_smooth;
-uniform float u_corner;
 uniform int u_count;
-uniform vec4 u_cells[${MAX_CELLS}];
-uniform vec4 u_cursor;
+uniform vec4 u_shape[${MAX_BLOBS}];
+uniform vec4 u_style[${MAX_BLOBS}];
 uniform vec3 u_fill;
 uniform vec3 u_fillHover;
 uniform vec3 u_fillSelected;
@@ -68,9 +66,20 @@ float sdRoundHexagon(vec2 p, float apothem, float corner) {
 	return sdHexagon(p, apothem - corner) - corner;
 }
 
+float blobDistance(vec2 p, vec4 shape, vec2 stretch) {
+	vec2 q = p - shape.xy;
+	float amount = length(stretch);
+	vec2 dir = amount > 1e-4 ? stretch / amount : vec2(1.0, 0.0);
+	float grow = 1.0 + amount;
+	float thin = inversesqrt(grow);
+	float along = dot(q, dir);
+	q = dir * (along / grow) + (q - dir * along) / thin;
+	return sdRoundHexagon(q, shape.z, shape.w) * thin;
+}
+
 float smin(float a, float b, float k) {
 	float h = max(k - abs(a - b), 0.0) / k;
-	return min(a, b) - h * h * k * 0.25;
+	return min(a, b) - h * h * h * k * (1.0 / 6.0);
 }
 
 void main() {
@@ -79,20 +88,13 @@ void main() {
 	float field = 1e5;
 	float weightSum = 0.0;
 	vec3 fillSum = vec3(0.0);
-	for (int i = 0; i < ${MAX_CELLS}; i++) {
+	for (int i = 0; i < ${MAX_BLOBS}; i++) {
 		if (i >= u_count) break;
-		vec4 c = u_cells[i];
-		float d = sdRoundHexagon(p - c.xy, c.z, u_corner);
+		vec4 style = u_style[i];
+		float d = blobDistance(p, u_shape[i], style.xy);
 		field = smin(field, d, u_smooth);
 		float w = exp(-d * 0.25);
-		fillSum += (c.w > 1.5 ? u_fillSelected : (c.w > 0.5 ? u_fillHover : u_fill)) * w;
-		weightSum += w;
-	}
-	if (u_cursor.w > 0.5) {
-		float d = sdRoundHexagon(p - u_cursor.xy, u_cursor.z, min(u_corner, u_cursor.z * 0.6));
-		field = smin(field, d, u_smooth);
-		float w = exp(-d * 0.25);
-		fillSum += u_fillHover * w;
+		fillSum += mix(mix(u_fill, u_fillHover, style.z), u_fillSelected, style.w) * w;
 		weightSum += w;
 	}
 	vec3 fill = weightSum > 0.0 ? fillSum / weightSum : u_fill;
@@ -101,9 +103,7 @@ void main() {
 	float aa = max(fwidth(field), 0.5);
 	float inside = 1.0 - smoothstep(-aa, aa, field);
 	vec3 color = mix(fill, u_ink, rim * rim * 0.1);
-	float alpha = inside;
-	color *= alpha;
-	outColor = vec4(color, alpha);
+	outColor = vec4(color * inside, inside);
 }`;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string) {
@@ -154,17 +154,16 @@ export function createBlobRenderer(
 	gl.bindVertexArray(vao);
 	gl.disable(gl.DEPTH_TEST);
 	gl.disable(gl.BLEND);
+	gl.clearColor(0, 0, 0, 0);
 
 	const uniform = (name: string) => gl.getUniformLocation(program, name);
 	const locations = {
 		size: uniform("u_size"),
 		dpr: uniform("u_dpr"),
-		time: uniform("u_time"),
 		smooth: uniform("u_smooth"),
-		corner: uniform("u_corner"),
 		count: uniform("u_count"),
-		cells: uniform("u_cells"),
-		cursor: uniform("u_cursor"),
+		shape: uniform("u_shape"),
+		style: uniform("u_style"),
 	};
 	for (const [name, value] of Object.entries(THEME_COLORS)) {
 		gl.uniform3fv(uniform(name), parseHex(value));
@@ -173,9 +172,12 @@ export function createBlobRenderer(
 	let width = 0;
 	let height = 0;
 	let dpr = 1;
-	const cellData = new Float32Array(MAX_CELLS * 4);
+	let count = 0;
+	let smooth = SMOOTH_REST;
+	const shapeData = new Float32Array(MAX_BLOBS * 4);
+	const styleData = new Float32Array(MAX_BLOBS * 4);
 
-	const resize = () => {
+	const measure = () => {
 		const rect = canvas.getBoundingClientRect();
 		if (rect.width < 1 || rect.height < 1) return;
 		dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -186,39 +188,53 @@ export function createBlobRenderer(
 		gl.viewport(0, 0, canvas.width, canvas.height);
 		gl.uniform2f(locations.size, width, height);
 		gl.uniform1f(locations.dpr, dpr);
-		gl.uniform1f(locations.smooth, SMOOTH);
-		gl.uniform1f(locations.corner, CORNER);
 	};
 
-	const draw = (frame: BlobFrame) => {
-		if (width === 0) resize();
+	const render = () => {
 		if (width === 0) return;
-		const count = Math.min(frame.cells.length, MAX_CELLS);
-		for (let i = 0; i < count; i++) {
-			const c = frame.cells[i];
-			cellData[i * 4] = c.x;
-			cellData[i * 4 + 1] = c.y;
-			cellData[i * 4 + 2] = c.apothem;
-			cellData[i * 4 + 3] = c.state;
-		}
-		gl.uniform4fv(locations.cells, cellData);
+		gl.uniform4fv(locations.shape, shapeData);
+		gl.uniform4fv(locations.style, styleData);
 		gl.uniform1i(locations.count, count);
-		gl.uniform4f(
-			locations.cursor,
-			frame.cursor?.x ?? 0,
-			frame.cursor?.y ?? 0,
-			CURSOR_APOTHEM,
-			frame.cursor ? 1 : 0,
-		);
-		gl.uniform1f(locations.time, frame.time);
-		gl.clearColor(0, 0, 0, 0);
+		gl.uniform1f(locations.smooth, smooth);
 		gl.clear(gl.COLOR_BUFFER_BIT);
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
 	};
 
+	const draw = (shapes: readonly BlobShape[], length: number) => {
+		count = Math.min(length, MAX_BLOBS);
+		let fastest = 0;
+		for (let i = 0; i < count; i++) {
+			const shape = shapes[i];
+			const speed = Math.hypot(shape.vx, shape.vy);
+			const stretch =
+				speed > 1e-3
+					? (Math.min(speed / STRETCH_SPEED, 1) * MAX_STRETCH) / speed
+					: 0;
+			fastest = Math.max(fastest, speed);
+			shapeData[i * 4] = shape.x;
+			shapeData[i * 4 + 1] = shape.y;
+			shapeData[i * 4 + 2] = shape.apothem;
+			shapeData[i * 4 + 3] = shape.corner;
+			styleData[i * 4] = shape.vx * stretch;
+			styleData[i * 4 + 1] = shape.vy * stretch;
+			styleData[i * 4 + 2] = shape.hover;
+			styleData[i * 4 + 3] = shape.selected;
+		}
+		smooth =
+			SMOOTH_REST +
+			(SMOOTH_MOTION - SMOOTH_REST) * Math.min(fastest / SMOOTH_SPEED, 1);
+		if (width === 0 || dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
+			measure();
+		}
+		render();
+	};
+
 	return {
 		draw,
-		resize,
+		resize: () => {
+			measure();
+			render();
+		},
 		dispose: () => {
 			gl.deleteProgram(program);
 			gl.deleteShader(vertex);

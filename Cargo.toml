@@ -145,6 +145,22 @@ opt-level = "s"   # Optimize for binary size
 # memory for variable/type info nothing consumes.
 debug = "line-tables-only"
 
+# Sidecars staged for `bun run dev` / `capt`. Release's single codegen unit and
+# thin-LTO link made every edit to crates/rendering or crates/project cost
+# minutes of single-threaded compile before the window could open; this keeps
+# dependencies at release's opt-level and rebuilds workspace crates
+# incrementally in parallel. `build:tauri` still ships the release profile.
+[profile.sidecar-dev]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 256
+incremental = true
+debug = 0
+
+[profile.sidecar-dev.package."*"]
+opt-level = "s"
+
 [patch.crates-io]
 # screencapturekit = { git = "https://github.com/CapSoftware/screencapturekit-rs", rev = "7ff1e103742e56c8f6c2e940b5e52684ed0bed69" } # branch = "cap-main"
 cidre = { git = "https://github.com/CapSoftware/cidre", rev = "bf84b67079a8" }

@@ -9,10 +9,10 @@ import type {
 } from "~/utils/tauri";
 import { RgbInput } from "./color-utils";
 import { useEditorContext } from "./context";
-import { Field, Section, Slider, Subfield } from "./ui";
+import { Collapse, Field, Section, Slider, Subfield } from "./ui";
 
 // Five stops per palette, mirrored from cap_project::LensPalette::stops.
-const PALETTES: { id: LensPalette; name: string; stops: string[] }[] = [
+export const PALETTES: { id: LensPalette; name: string; stops: string[] }[] = [
 	{ id: "none", name: "Off", stops: [] },
 	{
 		id: "crimson",
@@ -63,7 +63,6 @@ const LENS_SLIDERS: {
 	{ key: "bloom", name: "Bloom" },
 	{ key: "aberration", name: "Aberration" },
 	{ key: "ledGrid", name: "LED grid" },
-	{ key: "depthOfField", name: "Depth of field" },
 	{ key: "grain", name: "Grain" },
 	{ key: "vignette", name: "Vignette" },
 	{ key: "scanlines", name: "Scanlines" },
@@ -162,30 +161,43 @@ export function LensTab() {
 					</For>
 				</div>
 				<div class="flex flex-col">
-					<For each={LENS_SLIDERS}>
-						{(slider) => (
-							<Field inline name={slider.name} value={pct(lens()[slider.key])}>
-								<Slider
-									value={[lens()[slider.key]]}
-									onChange={(v) => setLens(slider.key, v[0])}
-									minValue={0}
-									maxValue={1}
-									step={0.01}
-									formatTooltip={pct}
-								/>
-							</Field>
-						)}
-					</For>
+					<Field inline name="Focus" value={pct(lens().depthOfField)}>
+						<Slider
+							value={[lens().depthOfField]}
+							onChange={(v) => setLens("depthOfField", v[0])}
+							minValue={0}
+							maxValue={1}
+							step={0.01}
+							formatTooltip={pct}
+						/>
+					</Field>
+					<Collapse name="Effects" id="lens-effects">
+						<For each={LENS_SLIDERS}>
+							{(slider) => (
+								<Field
+									inline
+									name={slider.name}
+									value={pct(lens()[slider.key])}
+								>
+									<Slider
+										value={[lens()[slider.key]]}
+										onChange={(v) => setLens(slider.key, v[0])}
+										minValue={0}
+										maxValue={1}
+										step={0.01}
+										formatTooltip={pct}
+									/>
+								</Field>
+							)}
+						</For>
+					</Collapse>
 				</div>
-				<p class="text-[11px] leading-relaxed text-ed-text-3">
-					Applied in preview and export only. Recording stays untouched.
-				</p>
 			</Section>
 
 			<div class="w-full border-t border-ed-line" />
 
 			<Section name="Tracker">
-				<Subfield name="Lock onto cursor and clicks">
+				<Subfield name="Follow cursor">
 					<Toggle
 						checked={tracker().enabled}
 						onChange={(v) => setTracker("enabled", v)}
@@ -201,59 +213,65 @@ export function LensTab() {
 							step={0.05}
 						/>
 					</Field>
-					<Field
-						inline
-						name="Lock hold"
-						value={`${tracker().lockDuration.toFixed(1)}s`}
-					>
-						<Slider
-							value={[tracker().lockDuration]}
-							onChange={(v) => setTracker("lockDuration", v[0])}
-							minValue={0.2}
-							maxValue={2}
-							step={0.05}
-						/>
-					</Field>
-					<Subfield name="Hatch">
-						<Toggle
-							checked={tracker().hatch}
-							onChange={(v) => setTracker("hatch", v)}
-						/>
-					</Subfield>
-					<Subfield name="Coordinates">
-						<Toggle
-							checked={tracker().labels}
-							onChange={(v) => setTracker("labels", v)}
-						/>
-					</Subfield>
-					<div class="flex gap-3">
-						<div class="flex-1 min-w-0">
-							<span class="block mb-1 text-[11px] text-ed-text-3">Box</span>
-							<RgbInput
-								value={tracker().color as [number, number, number]}
-								onChange={(c) => setTracker("color", c)}
+					<Collapse name="Style" id="tracker-style">
+						<Field
+							inline
+							name="Lock hold"
+							value={`${tracker().lockDuration.toFixed(1)}s`}
+						>
+							<Slider
+								value={[tracker().lockDuration]}
+								onChange={(v) => setTracker("lockDuration", v[0])}
+								minValue={0.2}
+								maxValue={2}
+								step={0.05}
 							/>
-						</div>
-						<div class="flex-1 min-w-0">
-							<span class="block mb-1 text-[11px] text-ed-text-3">Lock</span>
-							<RgbInput
-								value={tracker().lockColor as [number, number, number]}
-								onChange={(c) => setTracker("lockColor", c)}
+						</Field>
+						<Subfield name="Hatch">
+							<Toggle
+								checked={tracker().hatch}
+								onChange={(v) => setTracker("hatch", v)}
 							/>
+						</Subfield>
+						<Subfield name="Coordinates">
+							<Toggle
+								checked={tracker().labels}
+								onChange={(v) => setTracker("labels", v)}
+							/>
+						</Subfield>
+						<div class="flex gap-3">
+							<div class="flex-1 min-w-0">
+								<span class="block mb-1 text-[11px] text-ed-text-3">Box</span>
+								<RgbInput
+									value={tracker().color as [number, number, number]}
+									onChange={(c) => setTracker("color", c)}
+								/>
+							</div>
+							<div class="flex-1 min-w-0">
+								<span class="block mb-1 text-[11px] text-ed-text-3">Lock</span>
+								<RgbInput
+									value={tracker().lockColor as [number, number, number]}
+									onChange={(c) => setTracker("lockColor", c)}
+								/>
+							</div>
 						</div>
-					</div>
+					</Collapse>
 				</Show>
 			</Section>
 		</>
 	);
 }
 
-const PATTERNS: { id: BackgroundPattern; name: string }[] = [
-	{ id: "none", name: "None" },
-	{ id: "dither", name: "Dither" },
-	{ id: "halftone", name: "Halftone" },
-	{ id: "ascii", name: "ASCII" },
-];
+const PATTERNS: { id: BackgroundPattern; name: string; animated?: boolean }[] =
+	[
+		{ id: "none", name: "None" },
+		{ id: "dither", name: "Dither" },
+		{ id: "halftone", name: "Halftone" },
+		{ id: "ascii", name: "ASCII" },
+		{ id: "stackedDither", name: "Stacked", animated: true },
+		{ id: "asciiFlow", name: "ASCII", animated: true },
+		{ id: "flowLines", name: "Lines", animated: true },
+	];
 
 const DEFAULT_PATTERN: BackgroundPatternConfiguration = {
 	kind: "none",
@@ -271,13 +289,14 @@ export function PatternControls(props: {
 
 	return (
 		<div class="flex flex-col">
-			<Field inline name="Pattern">
-				<div class="flex gap-1">
+			<Field name="Pattern">
+				<div class="grid grid-cols-4 gap-1">
 					<For each={PATTERNS}>
 						{(p) => (
 							<button
 								type="button"
-								class="px-2 h-[24px] rounded-[4px] border font-mono text-[10px] uppercase tracking-wider transition-colors"
+								title={p.animated ? `${p.name} (animated)` : p.name}
+								class="flex gap-1 justify-center items-center px-1 h-[24px] rounded-[4px] border font-mono text-[10px] uppercase tracking-wider transition-colors"
 								classList={{
 									"border-ed-accent text-ed-text-1 bg-ed-ctl":
 										pattern().kind === p.id,
@@ -286,6 +305,12 @@ export function PatternControls(props: {
 								}}
 								onClick={() => update({ kind: p.id })}
 							>
+								<Show when={p.animated}>
+									<span
+										aria-hidden="true"
+										class="size-1 rounded-full bg-ed-accent"
+									/>
+								</Show>
 								{p.name}
 							</button>
 						)}

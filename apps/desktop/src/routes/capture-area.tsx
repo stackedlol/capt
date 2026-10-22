@@ -284,6 +284,7 @@ export default function CaptureArea() {
 						ref={cropperRef}
 						aspectRatio={aspect() ?? undefined}
 						showBounds={true}
+						appearance="minimal"
 						onCropChange={setCrop}
 						snapToRatioEnabled={state.snapToRatio}
 						initialCrop={() => {

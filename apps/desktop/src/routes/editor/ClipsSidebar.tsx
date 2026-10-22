@@ -19,6 +19,7 @@ import {
 import { produce } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import toast from "solid-toast";
+import { toastLoadingIcon } from "~/components/DotGridLoader";
 import { commands } from "~/utils/tauri";
 import {
 	clipTimelineOffsets,
@@ -260,7 +261,9 @@ export function ClipsSidebar(props: { class?: string }) {
 	const importRecordingPath = async (sourcePath: string) => {
 		if (importing()) return;
 		setImporting(true);
-		const toastId = toast.loading("Importing clip…");
+		const toastId = toast.loading("Importing clip…", {
+			icon: toastLoadingIcon(),
+		});
 		try {
 			if (!(await pauseForProjectChange())) {
 				toast.dismiss(toastId);

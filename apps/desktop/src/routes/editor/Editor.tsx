@@ -40,10 +40,12 @@ import {
 	createCropOptionsMenuItems,
 	type Ratio,
 } from "~/components/Cropper";
+import { DotGridLoader, toastLoadingIcon } from "~/components/DotGridLoader";
 import { Toggle } from "~/components/Toggle";
 import { composeEventHandlers } from "~/utils/composeEventHandlers";
 import { createTauriEventListener } from "~/utils/createEventListener";
 import { commands, events } from "~/utils/tauri";
+import { planZoomsWithAi } from "./ai-zoom";
 import { ConfigSidebar } from "./ConfigSidebar";
 import {
 	EditorContextProvider,
@@ -57,6 +59,7 @@ import {
 import { EditorErrorScreen } from "./EditorErrorScreen";
 import { DEFAULT_TIMELINE_HEIGHT, editorVerticalLayout } from "./editor-layout";
 import { EditorSkeleton } from "./editor-skeleton";
+import { FxInspector, FxNetwork } from "./FxStudio";
 import { Header, type TitleSaveRegistration } from "./Header";
 import { ImportProgress } from "./ImportProgress";
 import { PlayerContent } from "./Player";
@@ -84,6 +87,8 @@ const TranscriptPanel = lazy(() =>
 const MIN_PLAYER_HEIGHT = 320;
 const MIN_TIMELINE_HEIGHT = 240;
 const MIN_COMPACT_TIMELINE_HEIGHT = 144;
+const FX_NETWORK_MIN_HEIGHT = 196;
+
 // The timeline card's own vertical padding (pt-2.5 + pb-3); the Timeline
 // reports the height its ruler and rows need inside that box.
 const TIMELINE_CARD_PADDING_Y = 22;
@@ -395,6 +400,7 @@ function Inner(props: {
 }) {
 	const {
 		project,
+		setProject,
 		canvasControls,
 		flushProjectConfig,
 		editorInstance,
@@ -412,6 +418,25 @@ function Inner(props: {
 		preparingSession?.ordinaryReady() ??
 		canvasControls()?.hasRenderedFrame() ??
 		false;
+
+	let pendingAiZoomChecked = false;
+	createEffect(() => {
+		if (!editorReady() || pendingAiZoomChecked) return;
+		pendingAiZoomChecked = true;
+		commands
+			.takePendingAiZoom()
+			.then((pending) => {
+				if (!pending) return;
+				const zoomsNow = () =>
+					JSON.stringify(project.timeline?.zoomSegments ?? []);
+				const before = zoomsNow();
+				void planZoomsWithAi({
+					apply: (segments) => setProject("timeline", "zoomSegments", segments),
+					shouldApply: () => zoomsNow() === before,
+				});
+			})
+			.catch((error) => console.error("Pending AI zoom check failed:", error));
+	});
 	onMount(() => {
 		const blockPreparingKeys = (event: KeyboardEvent) => {
 			if (editorReady()) return;
@@ -464,7 +489,7 @@ function Inner(props: {
 	});
 
 	const appendRecordedClip = async (recordingPath: string) => {
-		const toastId = toast.loading("Adding clip…");
+		const toastId = toast.loading("Adding clip…", { icon: toastLoadingIcon() });
 		try {
 			const pending = requestHandoffPlayback(false);
 			if (pending && !(await pending)) {
@@ -499,6 +524,11 @@ function Inner(props: {
 	const isClipsMode = () => {
 		const d = dialog();
 		return "type" in d && d.type === "clips" && d.open;
+	};
+
+	const isFxMode = () => {
+		const d = dialog();
+		return "type" in d && d.type === "fx" && d.open;
 	};
 
 	const [clipsSidebarMounted, setClipsSidebarMounted] = createSignal(false);
@@ -969,13 +999,16 @@ function Inner(props: {
 									<div
 										class="overflow-hidden min-h-0"
 										classList={{
-											flex: !isClipsMode(),
-											"flex-1": !isClipsMode(),
-											hidden: isClipsMode(),
+											flex: !isClipsMode() && !isFxMode(),
+											"flex-1": !isClipsMode() && !isFxMode(),
+											hidden: isClipsMode() || isFxMode(),
 										}}
 									>
 										<ConfigSidebar />
 									</div>
+									<Show when={isFxMode()}>
+										<FxInspector />
+									</Show>
 									<Show when={clipsSidebarMounted()}>
 										<Suspense>
 											<ClipsSidebar
@@ -1018,7 +1051,9 @@ function Inner(props: {
 						</div>
 						<div
 							class="relative flex-none px-2 min-h-0"
-							style={{ height: `${timelineHeight()}px` }}
+							style={{
+								height: `${isFxMode() ? Math.max(timelineHeight(), FX_NETWORK_MIN_HEIGHT) : timelineHeight()}px`,
+							}}
 						>
 							<div
 								role="separator"
@@ -1035,12 +1070,19 @@ function Inner(props: {
 								/>
 							</div>
 							<div class="overflow-hidden relative px-3 pt-2.5 pb-3 h-full rounded-xl bg-ed-card shadow-ed-card">
-								<div class="h-full">
+								<div class="h-full" classList={{ hidden: isFxMode() }}>
 									<Timeline
-										onViewportOverflowChange={setTimelineViewportOverflow}
-										onContentHeightChange={updateTimelineContentHeight}
+										onViewportOverflowChange={(overflow) => {
+											if (!isFxMode()) setTimelineViewportOverflow(overflow);
+										}}
+										onContentHeightChange={(height) => {
+											if (!isFxMode()) updateTimelineContentHeight(height);
+										}}
 									/>
 								</div>
+								<Show when={isFxMode()}>
+									<FxNetwork />
+								</Show>
 							</div>
 						</div>
 					</div>
@@ -1627,7 +1669,7 @@ function Dialogs() {
 												</div>
 												<Show when={!frameLoaded()}>
 													<div class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 rounded-xl bg-ed-stage">
-														<div class="size-6 animate-spin rounded-sm border-2 border-ed-line-strong border-t-ed-accent" />
+														<DotGridLoader class="size-5 text-ed-text-2" />
 														<span class="text-xs font-medium text-ed-text-2">
 															Loading frame…
 														</span>
@@ -1644,7 +1686,7 @@ function Dialogs() {
 													/>
 													<Show when={!previewReady()}>
 														<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ed-stage">
-															<div class="size-5 animate-spin rounded-sm border-2 border-ed-line-strong border-t-ed-accent" />
+															<DotGridLoader class="size-4 text-ed-text-3" />
 															<span class="text-[11px] font-medium text-ed-text-3">
 																Rendering preview…
 															</span>

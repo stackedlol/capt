@@ -2,9 +2,10 @@
 	"name": "@cap/desktop",
 	"type": "module",
 	"scripts": {
-		"dev": "bun run --cwd ../.. cap-setup && bun run build:sidecar && dotenv -e ../../.env -- bun run preparescript && dotenv -e ../../.env -- bun run tauri dev",
+		"dev": "bun run --cwd ../.. cap-setup && bun run build:sidecar:dev && dotenv -e ../../.env -- bun run preparescript && dotenv -e ../../.env -- bun run tauri dev",
 		"build:tauri": "bun run build:sidecar && dotenv -e ../../.env -- bun run preparescript --release && dotenv -e ../../.env -- bun run tauri build",
 		"build:sidecar": "node ../../scripts/build-desktop-binaries.mjs",
+		"build:sidecar:dev": "node ../../scripts/build-desktop-binaries.mjs --profile=sidecar-dev",
 		"preparescript": "node scripts/prepare.js",
 		"localdev": "dotenv -e ../../.env -- vinxi dev --port 3002",
 		"build": "vinxi build",

@@ -2254,6 +2254,16 @@ pub async fn reveal_capture_window(
         return Ok(false);
     }
     let main = matches!(window.label().parse::<CapWindowId>(), Ok(CapWindowId::Main));
+    if main
+        && window
+            .app_handle()
+            .state::<crate::ArcLock<crate::App>>()
+            .read()
+            .await
+            .recording_hides_main_window()
+    {
+        return Ok(false);
+    }
     reveal_with_options(window, generation, main, main).await
 }
 

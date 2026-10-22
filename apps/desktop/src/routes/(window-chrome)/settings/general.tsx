@@ -4,6 +4,7 @@ import {
 	requestPermission,
 } from "@tauri-apps/plugin-notification";
 import { type OsType, type } from "@tauri-apps/plugin-os";
+import { toastLoadingIcon } from "~/components/DotGridLoader";
 import "@total-typescript/ts-reset/filter-boolean";
 import { Collapsible } from "@kobalte/core/collapsible";
 import { CheckMenuItem, Menu, MenuItem } from "@tauri-apps/api/menu";
@@ -24,7 +25,7 @@ import themePreviewAuto from "~/assets/theme-previews/auto.jpg";
 import themePreviewDark from "~/assets/theme-previews/dark.jpg";
 import themePreviewLight from "~/assets/theme-previews/light.jpg";
 import { Input, Slider } from "~/routes/editor/ui";
-import { aiStore, generalSettingsStore } from "~/store";
+import { aiStore, generalSettingsStore, unsplashStore } from "~/store";
 import {
 	deriveGeneralSettings,
 	type GeneralSettingsStore,
@@ -618,6 +619,8 @@ function Inner(props: { initialStore: GeneralSettingsStore | null }) {
 
 				<AiCard />
 
+				<UnsplashCard />
+
 				<TelemetryCard
 					value={settings.enableTelemetry !== false}
 					onChange={(v) => handleChange("enableTelemetry", v)}
@@ -644,13 +647,15 @@ async function offerRecordingsMigration() {
 	);
 	if (!shouldMove) return;
 
-	const toastId = toast.loading(`Moving ${count} ${plural}…`);
+	const toastId = toast.loading(`Moving ${count} ${plural}…`, {
+		icon: toastLoadingIcon(),
+	});
 	let unlisten: (() => void) | undefined;
 	try {
 		unlisten = await events.recordingsMigrationProgress.listen((e) => {
 			toast.loading(
 				`Moving recordings… ${Math.min(e.payload.done + 1, e.payload.total)}/${e.payload.total}`,
-				{ id: toastId },
+				{ id: toastId, icon: toastLoadingIcon() },
 			);
 		});
 
@@ -753,6 +758,59 @@ function AiCard() {
 						autocomplete="off"
 						spellcheck={false}
 						placeholder="sk-..."
+						class="w-48"
+						value={value()}
+						onInput={(e) => setDraft(e.currentTarget.value)}
+						onBlur={() => void save()}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") e.currentTarget.blur();
+						}}
+					/>
+				</SettingItem>
+			</SectionRows>
+		</Section>
+	);
+}
+
+function UnsplashCard() {
+	const [stored, { mutate }] = createResource(async () => {
+		const value = await unsplashStore.get();
+		return value?.accessKey ?? "";
+	});
+	const [draft, setDraft] = createSignal<string | null>(null);
+	const value = () => draft() ?? stored() ?? "";
+
+	const save = async () => {
+		const next = draft();
+		if (next === null) return;
+		const trimmed = next.trim();
+		setDraft(null);
+		if (trimmed === (stored() ?? "")) return;
+		try {
+			await unsplashStore.set({ accessKey: trimmed });
+			mutate(trimmed);
+			toast.success(trimmed ? "Unsplash key saved" : "Unsplash key removed");
+		} catch (error) {
+			console.error("Failed to save Unsplash key", error);
+			toast.error("Could not save the Unsplash key");
+		}
+	};
+
+	return (
+		<Section
+			title="Unsplash"
+			description="Lets the editor pull free photos from Unsplash as backgrounds. Create a free app at unsplash.com/developers and paste its Access Key."
+		>
+			<SectionRows>
+				<SettingItem
+					label="Unsplash access key"
+					description="Stored on this Mac only."
+				>
+					<Input
+						type="password"
+						autocomplete="off"
+						spellcheck={false}
+						placeholder="Access Key"
 						class="w-48"
 						value={value()}
 						onInput={(e) => setDraft(e.currentTarget.value)}

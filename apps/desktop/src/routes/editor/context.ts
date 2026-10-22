@@ -155,7 +155,8 @@ export type ModalDialog =
 export type LayoutMode =
 	| { type: "export" }
 	| { type: "transcript" }
-	| { type: "clips" };
+	| { type: "clips" }
+	| { type: "fx" };
 
 export type CurrentDialog = ModalDialog | LayoutMode;
 
@@ -167,6 +168,7 @@ const LAYOUT_MODE_TYPES: Set<CurrentDialog["type"]> = new Set([
 	"export",
 	"transcript",
 	"clips",
+	"fx",
 ]);
 
 const PERSISTED_LAYOUT_MODE_TYPES: Set<CurrentDialog["type"]> = new Set([

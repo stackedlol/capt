@@ -4,13 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type as ostype } from "@tauri-apps/plugin-os";
 import { createEffect, onCleanup, Show } from "solid-js";
+import { DotGridLoader } from "~/components/DotGridLoader";
 import CaptionControlsWindows11 from "~/components/titlebar/controls/CaptionControlsWindows11";
 import { createTauriEventListener } from "~/utils/createEventListener";
 import { isRecordingStorageError } from "~/utils/recording";
 import { commands } from "~/utils/tauri";
 import IconAlertTriangle from "~icons/lucide/alert-triangle";
 import IconFolder from "~icons/lucide/folder";
-import IconLoaderCircle from "~icons/lucide/loader-circle";
 import IconRefreshCw from "~icons/lucide/refresh-cw";
 
 const NEEDS_RECOVERY_PATTERN = /may need to be recovered/i;
@@ -240,7 +240,7 @@ export function EditorErrorScreen(props: {
 										</>
 									}
 								>
-									<IconLoaderCircle class="size-4 mr-2 animate-spin" />
+									<DotGridLoader class="size-4 mr-2" />
 									Recovering...
 								</Show>
 							</Button>

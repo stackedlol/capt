@@ -1,7 +1,7 @@
 import { type as ostype } from "@tauri-apps/plugin-os";
 import { cx } from "cva";
+import { CaptMark } from "~/components/CaptMark";
 import CaptionControlsWindows11 from "~/components/titlebar/controls/CaptionControlsWindows11";
-import IconCapLogo from "~icons/cap/logo";
 
 function SkeletonPulse(props: { class?: string }) {
 	return (
@@ -76,9 +76,13 @@ function PreviewSkeleton() {
 				</div>
 
 				<div class="flex items-center justify-center">
-					<div class="animate-spin">
-						<IconCapLogo class="size-12 text-gray-400 opacity-50" />
-					</div>
+					<CaptMark
+						state="loading"
+						cells={18}
+						gap={0.22}
+						class="size-12 text-gray-400 opacity-50"
+						label="Loading"
+					/>
 				</div>
 			</div>
 		</div>

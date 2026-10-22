@@ -1,0 +1,48 @@
+/* CaptMark: per-cell phase comes from --a (angle, 0..1 clockwise from the
+   top) and --d (depth, 0 at the border). A negative delay of (phase - 1)
+   periods makes the peak land at `phase` of the way through each cycle. */
+@media (prefers-reduced-motion: no-preference) {
+	.capt-mark-thinking rect.hot {
+		animation: capt-mark-sweep var(--capt-sweep, 1.2s) linear infinite;
+		animation-delay: calc((var(--a) - 1) * var(--capt-sweep, 1.2s));
+	}
+
+	.capt-mark-thinking rect.pastel {
+		animation: capt-mark-sweep var(--capt-band, 1.8s) linear infinite;
+		animation-delay: calc(var(--a) * -1 * var(--capt-band, 1.8s));
+	}
+
+	.capt-mark-loading rect {
+		animation: capt-mark-ripple 1.1s ease-in-out infinite;
+		animation-delay: calc((var(--d) * 0.6 - 1) * 1.1s);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.capt-mark-thinking,
+	.capt-mark-loading {
+		opacity: 0.7;
+	}
+}
+
+@keyframes capt-mark-sweep {
+	0% {
+		opacity: 1;
+	}
+	45% {
+		opacity: 0.22;
+	}
+	100% {
+		opacity: 0.22;
+	}
+}
+
+@keyframes capt-mark-ripple {
+	0%,
+	100% {
+		opacity: 0.25;
+	}
+	35% {
+		opacity: 1;
+	}
+}

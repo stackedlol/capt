@@ -2,6 +2,7 @@ import { cx } from "cva";
 import {
 	type Component,
 	type ComponentProps,
+	createMemo,
 	createSignal,
 	For,
 	type JSX,
@@ -9,23 +10,20 @@ import {
 	onMount,
 	Show,
 } from "solid-js";
-import IconCapLogo from "~icons/cap/logo";
-import IconLucideCamera from "~icons/lucide/camera";
-import IconLucideCrop from "~icons/lucide/crop";
-import IconLucideMonitorPlay from "~icons/lucide/monitor-play";
-import IconLucideSquareDashedMousePointer from "~icons/lucide/square-dashed-mouse-pointer";
+import { CaptMark } from "~/components/CaptMark";
 import {
+	type Blob,
 	createMotion,
 	type MotionInput,
-	type MotionState,
 	type Point,
 	settled,
 	step,
 } from "./blob-motion";
 import {
-	type BlobCell,
 	type BlobRenderer,
+	type BlobShape,
 	HexBlobCanvas,
+	MAX_BLOBS,
 } from "./HexBlobCanvas";
 import { createPerformanceMetrics, MetricBlock } from "./PerformanceStrip";
 
@@ -42,6 +40,36 @@ type CaptureCell = Axial & {
 	Icon: Component<ComponentProps<"svg">>;
 };
 
+// Heavy rounded glyphs in the style of the macOS screenshot toolbar.
+function IconDisplay(props: ComponentProps<"svg">) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
+			<rect
+				x="3"
+				y="4.5"
+				width="18"
+				height="15"
+				rx="3.25"
+				stroke="currentColor"
+				stroke-width="2"
+			/>
+			<rect x="6" y="14" width="12" height="2.75" rx="1" fill="currentColor" />
+		</svg>
+	);
+}
+
+function IconArea(props: ComponentProps<"svg">) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
+			<path
+				stroke="currentColor"
+				stroke-width="2"
+				d="M4 8V6.5A2.5 2.5 0 0 1 6.5 4H8M16 4h1.5A2.5 2.5 0 0 1 20 6.5V8M20 16v1.5a2.5 2.5 0 0 1-2.5 2.5H16M8 20H6.5A2.5 2.5 0 0 1 4 17.5V16M10.25 4h3.5M20 10.25v3.5M13.75 20h-3.5M4 13.75v-3.5"
+			/>
+		</svg>
+	);
+}
+
 const RADIUS = 47;
 const PITCH = 50;
 const CORNER = 6;
@@ -52,6 +80,8 @@ const APOTHEM = (RADIUS - 0.5) * (SQRT3 / 2) * 0.9;
 const STAGE = 272;
 const SELECT_DELAY_MS = 220;
 const IDLE_FRAME_MS = 1000;
+const CALM_FRAME_MS = 32;
+const CURSOR_APOTHEM = 6;
 
 const CAPTURES: CaptureCell[] = [
 	{
@@ -60,8 +90,8 @@ const CAPTURES: CaptureCell[] = [
 		action: "studio",
 		target: "display",
 		group: "Record",
-		label: "record desktop",
-		Icon: IconLucideMonitorPlay,
+		label: "Record Desktop",
+		Icon: IconDisplay,
 	},
 	{
 		q: -1,
@@ -69,8 +99,8 @@ const CAPTURES: CaptureCell[] = [
 		action: "studio",
 		target: "area",
 		group: "Record",
-		label: "custom area",
-		Icon: IconLucideSquareDashedMousePointer,
+		label: "Custom\nArea",
+		Icon: IconArea,
 	},
 	{
 		q: 1,
@@ -78,8 +108,8 @@ const CAPTURES: CaptureCell[] = [
 		action: "screenshot",
 		target: "display",
 		group: "Screenshot",
-		label: "capture desktop",
-		Icon: IconLucideCamera,
+		label: "Capture Desktop",
+		Icon: IconDisplay,
 	},
 	{
 		q: 1,
@@ -87,8 +117,8 @@ const CAPTURES: CaptureCell[] = [
 		action: "screenshot",
 		target: "area",
 		group: "Screenshot",
-		label: "custom bounds",
-		Icon: IconLucideCrop,
+		label: "Custom Bounds",
+		Icon: IconArea,
 	},
 ];
 
@@ -105,6 +135,11 @@ function centre(cell: Axial): Point {
 		x: PITCH * 1.5 * cell.q,
 		y: PITCH * SQRT3 * (cell.r + cell.q / 2),
 	};
+}
+
+function smoothstep(edge0: number, edge1: number, value: number) {
+	const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1);
+	return t * t * (3 - 2 * t);
 }
 
 function hexPath(radius: number, corner: number) {
@@ -139,7 +174,7 @@ const HEX_PATH = hexPath(RADIUS - 0.5, CORNER);
 // the icon sit where the cell is still ~66px wide, so cap labels there and let
 // long ones break onto a second balanced line instead of touching the edges.
 const LABEL_FIT =
-	"relative max-w-[64px] font-medium leading-[1.15] text-balance break-words";
+	"relative max-w-[64px] font-medium leading-[1.15] tracking-[-0.01em] normal-case whitespace-pre-line text-balance break-words";
 const HEX_CLIP =
 	"polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)";
 
@@ -186,43 +221,93 @@ export default function RadialCaptureMenu(props: {
 	).matches;
 	const [renderer, setRenderer] = createSignal<BlobRenderer | null>(null);
 	const [webgl, setWebgl] = createSignal(true);
-	const [hovered, setHovered] = createSignal<number | null>(null);
-	const [open, setOpen] = createSignal(reducedMotion);
-	const [pointer, setPointer] = createSignal<Point | null>(null);
 	const metrics = createPerformanceMetrics();
 	const elements: (HTMLElement | undefined)[] = [];
+	const placed = CELLS.map(() => ({ transform: "", opacity: "" }));
+	const shapes: BlobShape[] = Array.from({ length: MAX_BLOBS }, () => ({
+		x: 0,
+		y: 0,
+		apothem: 0,
+		corner: 0,
+		vx: 0,
+		vy: 0,
+		hover: 0,
+		selected: 0,
+	}));
+	const pointerAt: Point = { x: 0, y: 0 };
+	const motion = createMotion(CELLS.map(centre), true, reducedMotion);
+	const input: MotionInput = {
+		open: reducedMotion,
+		hovered: null,
+		selected: null,
+		pointer: null,
+	};
 	let stage!: HTMLDivElement;
-	let motion: MotionState = createMotion(CELLS.map(centre), !reducedMotion);
+	let stageRect: DOMRect | null = null;
 	let selectTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const isActive = (cell: CaptureCell) =>
 		props.activeAction === cell.action && props.activeTarget === cell.target;
-	const selected = () => CAPTURES.find(isActive) ?? null;
-
-	const cellState = (index: number): BlobCell["state"] => {
-		const capture = CAPTURES[index];
-		if (capture && isActive(capture)) return 2;
-		return hovered() === index ? 1 : 0;
+	const selectedIndex = createMemo(() => {
+		const index = CAPTURES.findIndex(isActive);
+		return index < 0 ? null : index;
+	});
+	const selected = () => {
+		const index = selectedIndex();
+		return index === null ? null : CAPTURES[index];
 	};
 
-	const place = (blob: Point, index: number) => {
+	const place = (blob: Blob, index: number) => {
 		const element = elements[index];
 		if (!element) return;
-		element.style.transform = `translate(${blob.x.toFixed(2)}px, ${blob.y.toFixed(2)}px)`;
+		const reach = Math.hypot(blob.home.x, blob.home.y);
+		const fade =
+			reach > 0
+				? smoothstep(0.35, 0.85, Math.hypot(blob.x, blob.y) / reach)
+				: 1;
+		const visible = fade * (props.disabled && index < CENTRE_INDEX ? 0.5 : 1);
+		const transform = `translate3d(${blob.x.toFixed(2)}px, ${blob.y.toFixed(2)}px, 0)`;
+		const opacity = visible > 0.995 ? "" : visible.toFixed(3);
+		const last = placed[index];
+		if (last.transform !== transform) {
+			element.style.transform = transform;
+			last.transform = transform;
+		}
+		if (last.opacity !== opacity) {
+			element.style.opacity = opacity;
+			last.opacity = opacity;
+		}
 	};
 
 	const paint = () => {
-		const frame = {
-			cells: motion.blobs.map((blob, index) => ({
-				x: blob.x,
-				y: blob.y,
-				apothem: APOTHEM * (hovered() === index ? 1.03 : 1),
-				state: cellState(index),
-			})),
-			cursor: motion.cursor,
-			time: motion.time,
-		};
-		renderer()?.draw(frame);
+		const target = renderer();
+		if (target) {
+			let count = 0;
+			for (const blob of motion.blobs) {
+				const shape = shapes[count++];
+				shape.x = blob.x;
+				shape.y = blob.y;
+				shape.apothem = APOTHEM * blob.scale;
+				shape.corner = CORNER;
+				shape.vx = blob.vx;
+				shape.vy = blob.vy;
+				shape.hover = blob.hover;
+				shape.selected = blob.selected;
+			}
+			const cursor = motion.cursor;
+			if (cursor && cursor.size > 0.01 && count < MAX_BLOBS) {
+				const shape = shapes[count++];
+				shape.x = cursor.x;
+				shape.y = cursor.y;
+				shape.apothem = CURSOR_APOTHEM * cursor.size;
+				shape.corner = Math.min(CORNER, shape.apothem * 0.6);
+				shape.vx = 0;
+				shape.vy = 0;
+				shape.hover = 1;
+				shape.selected = 0;
+			}
+			target.draw(shapes, count);
+		}
 		motion.blobs.forEach(place);
 	};
 
@@ -231,36 +316,43 @@ export default function RadialCaptureMenu(props: {
 		let last = performance.now();
 		let lastPaint = 0;
 
-		const input = (): MotionInput => ({
-			open: open(),
-			hovered: hovered(),
-			pointer: pointer(),
-		});
-
 		const frame = (now: number) => {
 			raf = requestAnimationFrame(frame);
 			if (document.hidden) {
 				last = now;
 				return;
 			}
-			const idle = !document.hasFocus() && settled(motion, input(), 1);
-			if (idle && now - lastPaint < IDLE_FRAME_MS) return;
-			const elapsed = (now - last) / 1000;
+			input.selected = selectedIndex();
+			const budget = settled(motion, input, 1)
+				? document.hasFocus()
+					? CALM_FRAME_MS
+					: IDLE_FRAME_MS
+				: 0;
+			if (now - lastPaint < budget) return;
+			step(motion, (now - last) / 1000, input);
 			last = now;
 			lastPaint = now;
-			if (!reducedMotion) motion = step(motion, elapsed, input());
 			paint();
 		};
 
-		if (!open()) requestAnimationFrame(() => setOpen(true));
+		if (!input.open) {
+			requestAnimationFrame(() => {
+				input.open = true;
+			});
+		}
 		raf = requestAnimationFrame(frame);
 		const onVisibility = () => {
 			last = performance.now();
 		};
+		const observer = new ResizeObserver(() => {
+			stageRect = null;
+		});
+		observer.observe(stage);
 		document.addEventListener("visibilitychange", onVisibility);
 		onCleanup(() => {
 			cancelAnimationFrame(raf);
 			clearTimeout(selectTimer);
+			observer.disconnect();
 			document.removeEventListener("visibilitychange", onVisibility);
 		});
 	});
@@ -271,20 +363,25 @@ export default function RadialCaptureMenu(props: {
 			props.onSelect(cell.action, cell.target);
 			return;
 		}
-		setOpen(false);
+		input.open = false;
 		selectTimer = setTimeout(() => {
 			selectTimer = undefined;
 			props.onSelect(cell.action, cell.target);
-			setOpen(true);
+			input.open = true;
 		}, SELECT_DELAY_MS);
 	};
 
 	const trackPointer = (event: PointerEvent) => {
-		const rect = stage.getBoundingClientRect();
-		setPointer({
-			x: event.clientX - rect.left - rect.width / 2,
-			y: event.clientY - rect.top - rect.height / 2,
-		});
+		stageRect ??= stage.getBoundingClientRect();
+		pointerAt.x = event.clientX - stageRect.left - stageRect.width / 2;
+		pointerAt.y = event.clientY - stageRect.top - stageRect.height / 2;
+		input.pointer = reducedMotion ? null : pointerAt;
+	};
+	const hover = (index: number) => {
+		input.hovered = index;
+	};
+	const unhover = (index: number) => {
+		if (input.hovered === index) input.hovered = null;
 	};
 
 	return (
@@ -292,8 +389,14 @@ export default function RadialCaptureMenu(props: {
 			ref={stage}
 			class="relative w-full shrink-0 lowercase"
 			style={{ height: `${STAGE}px` }}
+			onPointerEnter={(event) => {
+				stageRect = null;
+				trackPointer(event);
+			}}
 			onPointerMove={trackPointer}
-			onPointerLeave={() => setPointer(null)}
+			onPointerLeave={() => {
+				input.pointer = null;
+			}}
 		>
 			<Show when={webgl()}>
 				<HexBlobCanvas
@@ -330,7 +433,7 @@ export default function RadialCaptureMenu(props: {
 						ref={(element) => {
 							elements[CENTRE_INDEX + 1 + index()] = element;
 						}}
-						class="pointer-events-auto absolute flex items-center justify-center"
+						class="pointer-events-auto absolute flex items-center justify-center will-change-[transform,opacity]"
 						style={cellBox}
 					>
 						<Show when={!webgl()}>
@@ -348,7 +451,7 @@ export default function RadialCaptureMenu(props: {
 					elements[CENTRE_INDEX] = element;
 				}}
 				data-tauri-drag-region
-				class="absolute flex cursor-grab flex-col items-center justify-center gap-1 text-center active:cursor-grabbing [&>*]:pointer-events-none"
+				class="absolute flex cursor-grab flex-col items-center justify-center gap-1 text-center will-change-transform active:cursor-grabbing [&>*]:pointer-events-none"
 				style={{ ...cellBox, "clip-path": HEX_CLIP }}
 			>
 				<Show when={!webgl()}>
@@ -357,8 +460,13 @@ export default function RadialCaptureMenu(props: {
 				<Show
 					when={selected()}
 					fallback={
-						<IconCapLogo
-							class={cx("relative size-8", webgl() && "text-[#1c1c1e]")}
+						<CaptMark
+							state="thinking"
+							variant="brand"
+							cells={28}
+							gap={0.46}
+							dither
+							class="relative size-8 [--capt-band:5.4s] [--capt-sweep:3.6s]"
 						/>
 					}
 				>
@@ -366,7 +474,7 @@ export default function RadialCaptureMenu(props: {
 						<span
 							class={cx(
 								LABEL_FIT,
-								"text-[12px] tracking-[-0.01em]",
+								"text-[11px] tracking-[-0.01em]",
 								webgl() ? "text-[#1c1c1e]" : "text-gray-12",
 							)}
 						>
@@ -387,18 +495,14 @@ export default function RadialCaptureMenu(props: {
 						aria-pressed={isActive(cell) ? "true" : "false"}
 						aria-label={`${cell.group}: ${cell.label}`}
 						onClick={() => select(cell)}
-						onPointerEnter={() => setHovered(index())}
-						onPointerLeave={() =>
-							setHovered((current) => (current === index() ? null : current))
-						}
-						onFocus={() => setHovered(index())}
-						onBlur={() =>
-							setHovered((current) => (current === index() ? null : current))
-						}
+						onPointerEnter={() => hover(index())}
+						onPointerLeave={() => unhover(index())}
+						onFocus={() => hover(index())}
+						onBlur={() => unhover(index())}
 						style={{ ...cellBox, "clip-path": HEX_CLIP }}
 						class={cx(
-							"group absolute flex flex-col items-center justify-center gap-1 text-center outline-hidden will-change-transform",
-							props.disabled && "pointer-events-none opacity-50",
+							"group absolute flex flex-col items-center justify-center gap-[5px] text-center outline-hidden will-change-[transform,opacity]",
+							props.disabled && "pointer-events-none",
 						)}
 					>
 						<Show when={!webgl()}>
@@ -413,23 +517,23 @@ export default function RadialCaptureMenu(props: {
 						</Show>
 						<cell.Icon
 							class={cx(
-								"relative size-[18px] transition-colors duration-150",
+								"relative size-[26px] shrink-0 transition-colors duration-150",
 								isActive(cell)
 									? "text-[#15255c]"
 									: webgl()
-										? "text-[#6e6e75] group-hover:text-[#1c1c1e]"
-										: "text-gray-10 group-hover:text-gray-12",
+										? "text-[#1c1c1e]"
+										: "text-gray-12",
 							)}
 						/>
 						<span
 							class={cx(
 								LABEL_FIT,
-								"text-[11px]",
+								"text-[10px] transition-colors duration-150",
 								isActive(cell)
 									? "text-[#22397f]"
 									: webgl()
-										? "text-[#1c1c1e]"
-										: "text-gray-12",
+										? "text-[#7c7c83] group-hover:text-[#4a4a50]"
+										: "text-gray-10 group-hover:text-gray-11",
 							)}
 						>
 							{cell.label}

@@ -22,23 +22,127 @@ import {
 	type ValidComponent,
 } from "solid-js";
 import Tooltip from "~/components/Tooltip";
+import IconLucideChevronRight from "~icons/lucide/chevron-right";
 import { useEditorContext } from "./context";
 import { TextInput } from "./TextInput";
 
+const COLLAPSE_STORAGE_KEY = "capt-editor-collapsed";
+
+function readCollapseState(): Record<string, boolean> {
+	try {
+		return JSON.parse(localStorage.getItem(COLLAPSE_STORAGE_KEY) ?? "{}");
+	} catch {
+		return {};
+	}
+}
+
+function writeCollapseState(id: string, open: boolean) {
+	try {
+		const state = readCollapseState();
+		state[id] = open;
+		localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(state));
+	} catch {}
+}
+
+// Remembers each group's open state per viewer so the sidebar stays as the
+// user left it; anything never toggled falls back to `defaultOpen`.
+function createCollapse(id: () => string, defaultOpen: () => boolean) {
+	const [open, setOpen] = createSignal(
+		readCollapseState()[id()] ?? defaultOpen(),
+	);
+	const toggle = () => {
+		const next = !open();
+		setOpen(next);
+		writeCollapseState(id(), next);
+	};
+	return [open, toggle] as const;
+}
+
+function CollapseChevron(props: { open: boolean }) {
+	return (
+		<IconLucideChevronRight
+			class={cx(
+				"size-3.5 shrink-0 text-ed-text-3 transition-transform duration-150",
+				props.open && "rotate-90",
+			)}
+		/>
+	);
+}
+
 export function Section(
-	props: ParentProps<{ name: string; action?: JSX.Element; class?: string }>,
+	props: ParentProps<{
+		name: string;
+		action?: JSX.Element;
+		class?: string;
+		/** Header toggles the body; closed unless `defaultOpen`. */
+		collapsible?: boolean;
+		defaultOpen?: boolean;
+		/** Storage key for the open state; defaults to `name`. */
+		id?: string;
+	}>,
 ) {
+	const [open, toggle] = createCollapse(
+		() => `section:${props.id ?? props.name}`,
+		() => props.defaultOpen ?? false,
+	);
+	const expanded = () => !props.collapsible || open();
+
 	return (
 		<div class={cx("flex flex-col gap-2.5", props.class)}>
 			<div class="flex flex-row gap-2 items-center min-h-[22px]">
-				<SectionLabel name={props.name} />
-				<Show when={props.action}>
+				<Show
+					when={props.collapsible}
+					fallback={<SectionLabel name={props.name} />}
+				>
+					<button
+						type="button"
+						aria-expanded={open()}
+						onClick={toggle}
+						class="flex flex-row gap-1 items-center -ml-0.5 outline-hidden focus-visible:ring-1 focus-visible:ring-ed-accent rounded-sm"
+					>
+						<CollapseChevron open={open()} />
+						<SectionLabel name={props.name} />
+					</button>
+				</Show>
+				<Show when={props.action && expanded()}>
 					<div class="ml-auto flex flex-row gap-1 items-center">
 						{props.action}
 					</div>
 				</Show>
 			</div>
-			{props.children}
+			<Show when={expanded()}>{props.children}</Show>
+		</div>
+	);
+}
+
+/** A closed-by-default group of secondary controls inside a section. */
+export function Collapse(
+	props: ParentProps<{
+		name: string;
+		id?: string;
+		defaultOpen?: boolean;
+		class?: string;
+	}>,
+) {
+	const [open, toggle] = createCollapse(
+		() => `group:${props.id ?? props.name}`,
+		() => props.defaultOpen ?? false,
+	);
+
+	return (
+		<div class={cx("flex flex-col", props.class)}>
+			<button
+				type="button"
+				aria-expanded={open()}
+				onClick={toggle}
+				class="flex flex-row gap-1 items-center h-[28px] text-[12px] text-ed-text-3 hover:text-ed-text-1 transition-colors outline-hidden focus-visible:ring-1 focus-visible:ring-ed-accent rounded-sm"
+			>
+				<CollapseChevron open={open()} />
+				{props.name}
+			</button>
+			<Show when={open()}>
+				<div class="flex flex-col pl-[18px]">{props.children}</div>
+			</Show>
 		</div>
 	);
 }

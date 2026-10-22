@@ -41,6 +41,21 @@ async getPerformanceStats() : Promise<PerformanceStats> {
 async generateAiZoomSegments() : Promise<ZoomSegment[]> {
     return await TAURI_INVOKE("generate_ai_zoom_segments");
 },
+async takePendingAiZoom() : Promise<boolean> {
+    return await TAURI_INVOKE("take_pending_ai_zoom");
+},
+async generateAiFxChain(prompt: string, current: FxNode[]) : Promise<FxNode[]> {
+    return await TAURI_INVOKE("generate_ai_fx_chain", { prompt, current });
+},
+async unsplashSearch(query: string, page: number) : Promise<UnsplashPage> {
+    return await TAURI_INVOKE("unsplash_search", { query, page });
+},
+async unsplashPick(photo: UnsplashPhoto) : Promise<UnsplashPick> {
+    return await TAURI_INVOKE("unsplash_pick", { photo });
+},
+async unsplashAttribution(path: string) : Promise<UnsplashAttribution | null> {
+    return await TAURI_INVOKE("unsplash_attribution", { path });
+},
 async runDiagnostic(options: DiagnosticOptions) : Promise<DiagnosticRunResult> {
     return await TAURI_INVOKE("run_diagnostic", { options });
 },
@@ -712,11 +727,30 @@ notch: NotchConfiguration | null;
  * Ordered dither, halftone or ASCII drawn over a color or gradient
  * backdrop.
  */
-pattern?: BackgroundPatternConfiguration | null }
+pattern?: BackgroundPatternConfiguration | null;
 /**
- * Ordered patterns drawn over a gradient background for stylized screenshots.
+ * Zooms magnify the recording inside its padded card instead of growing
+ * the card over the backdrop, so the background border stays in frame.
  */
-export type BackgroundPattern = "none" | "dither" | "halftone" | "ascii"
+zoomWithinFrame: boolean }
+/**
+ * Patterns drawn over a color or gradient background. The first three are
+ * static ordered patterns; the rest animate with the video.
+ */
+export type BackgroundPattern = "none" | "dither" | "halftone" | "ascii" |
+/**
+ * Domain-warped flowing field quantized with a 4x4 Bayer matrix, ported
+ * from the stacked-dither shader.
+ */
+"stackedDither" |
+/**
+ * The same flowing field drawn as an ASCII brightness ramp.
+ */
+"asciiFlow" |
+/**
+ * Faint, nearly vertical dithered lines bent by noise.
+ */
+"flowLines"
 export type BackgroundPatternConfiguration = { kind: BackgroundPattern;
 /**
  * Cell size in px at 1080p output.
@@ -1048,6 +1082,26 @@ export type FrameStyle =
 "macbook"
 export type FrameTheme = "dark" | "light"
 export type FramesRendered = { renderedCount: number; totalFrames: number; type: "FramesRendered" }
+/**
+ * What moves a node's mix over time, like a CHOP wired into a TOP.
+ */
+export type FxDrive = "none" | "lfo" | "strobe" | "ramp" | "click"
+export type FxNode = { id: string; op: FxOp; enabled: boolean; mix: number;
+/**
+ * Op-specific parameters, both 0..1.
+ */
+a: number; b: number; color: [number, number, number]; palette: LensPalette; drive: FxDrive;
+/**
+ * Cycles per second for the periodic drives.
+ */
+rate: number; depth: number }
+/**
+ * One operator in the effects studio chain. Each runs as its own full-frame
+ * pass over the previous one's output, so order matters the way it does in
+ * a TouchDesigner TOP network.
+ */
+export type FxOp = "pixelate" | "wave" | "mirror" | "kaleidoscope" | "fisheye" | "transform" | "rgbSplit" | "blur" | "glow" | "edges" | "levels" | "hue" | "posterize" | "threshold" | "invert" | "gradientMap" | "tint" | "dither" | "halftone" | "ascii" | "scanlines" | "ledGrid" | "grain" | "vignette" | "glitch" | "tilt" | "orbit" | "dolly" | "tiltShift" | "letterbox" | "anamorphic" | "halation" | "lightLeak" | "filmGrade" | "lens"
+export type FxStackConfiguration = { enabled: boolean; nodes: FxNode[] }
 export type GeneralSettingsStore = { instanceId?: string; hideDockIcon?: boolean; enableNotifications?: boolean; disableAutoOpenLinks?: boolean; hasCompletedStartup?: boolean; theme?: AppTheme; windowTransparency?: boolean; postStudioRecordingBehaviour?: PostStudioRecordingBehaviour; mainWindowRecordingStartBehaviour?: MainWindowRecordingStartBehaviour; custom_cursor_capture2?: boolean; recordingCountdown?: number | null; enableNativeCameraPreview: boolean; autoZoomOnClicks?: boolean; defaultZoomAmount?: number | null;
 /**
  * `None` until [`init`] seeds it from whether this machine has a notched
@@ -1184,7 +1238,7 @@ textSizeVersion?: number;
  * legacy configs are migrated on load by seeding both animation
  * durations from `fade_duration`.
  */
-textAnimVersion?: number; lens?: LensConfiguration; tracker?: TrackerConfiguration }
+textAnimVersion?: number; lens?: LensConfiguration; tracker?: TrackerConfiguration; fx?: FxStackConfiguration }
 export type ProjectRecordingsMeta = { segments: SegmentRecordings[] }
 export type RecordingAction = "Started" | "InvalidAuthentication" | "UpgradeRequired"
 export type RecordingDeleted = { path: string }
@@ -1327,6 +1381,10 @@ export type TimelineSegment = { recordingSegment?: number; timescale: number; st
 export type TrackerConfiguration = { enabled: boolean; color: [number, number, number]; lockColor: [number, number, number]; size: number; hatch: boolean; labels: boolean; lockDuration: number }
 export type TranscriptionEngine = "Whisper" | "Parakeet"
 export type Trigger = "screenshotTaken" | "studioRecordingFinished" | "instantRecordingFinished" | "recordingStarted" | "uploadCompleted" | "videoImported" | "recordingDeleted"
+export type UnsplashAttribution = { photoId: string; photographer: string; photographerUrl: string; pageUrl: string }
+export type UnsplashPage = { photos: UnsplashPhoto[]; totalPages: number }
+export type UnsplashPhoto = { id: string; description: string | null; color: string | null; width: number; height: number; thumbUrl: string; previewUrl: string; rawUrl: string; pageUrl: string; downloadLocation: string; photographer: string; photographerUrl: string }
+export type UnsplashPick = { path: string; attribution: UnsplashAttribution }
 export type UploadMeta = { state: "MultipartUpload"; video_id: string; file_path: string; pre_created_video: VideoUploadInfo; recording_dir: string } | { state: "SinglePartUpload"; video_id: string; recording_dir: string; file_path: string; screenshot_path: string } | { state: "SegmentUpload"; video_id: string; pre_created_video: VideoUploadInfo; recording_dir: string } | { state: "Failed"; error: string } | { state: "Complete" }
 export type Video = { duration: number; width: number; height: number; fps: number; start_time: number }
 export type VideoImportProgress = { project_path: string; stage: ImportStage; progress: number; message: string }

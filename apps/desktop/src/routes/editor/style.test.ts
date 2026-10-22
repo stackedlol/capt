@@ -29,6 +29,7 @@ const background: BackgroundConfiguration = {
 	border: null,
 	frame: null,
 	notch: null,
+	zoomWithinFrame: true,
 };
 const camera: Camera = {
 	hide: true,

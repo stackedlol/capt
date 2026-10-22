@@ -21,8 +21,8 @@ use frame_pipeline::{
 use futures::future::OptionFuture;
 use layers::{
     Background, BackgroundLayer, BlurLayer, Camera3DBlurKind, Camera3DLayer, CameraLayer,
-    ClickRippleLayer, ColorGradeLayer, CursorLayer, DisplayLayer, FrameLayer, LensLayer, MaskLayer,
-    NotchLayer, NotchUniforms, TrackerLayer,
+    ClickRippleLayer, ColorGradeLayer, CursorLayer, DisplayLayer, FrameLayer, FxLayer, LensLayer,
+    MaskLayer, NotchLayer, NotchUniforms, TrackerLayer,
 };
 use specta::Type;
 use spring_mass_damper::SpringMassDamperSimulationConfig;
@@ -3038,7 +3038,7 @@ fn collect_tracker_locks(
     cursor_stop_time: Option<f32>,
     cursor_interp_fn: &dyn Fn(f32) -> Option<InterpolatedCursorPosition>,
 ) -> Vec<TrackerLock> {
-    if !project.tracker.enabled && !project.lens.is_active() {
+    if !project.tracker.enabled && !project.lens.is_active() && !project.fx.is_active() {
         return Vec::new();
     }
 
@@ -3230,6 +3230,55 @@ fn analyze_motion(current: &MotionBounds, previous: &MotionBounds) -> MotionAnal
     let zoom_center_uv = current.point_to_uv(zoom_center_point);
     analysis.zoom_center_uv = XY::new(clamp_uv(zoom_center_uv.x), clamp_uv(zoom_center_uv.y));
     analysis
+}
+
+/// Keeps a zoomed display inside its unzoomed card: the target stays at the
+/// card rect and the source crop narrows to the part of the recording the
+/// grown `zoomed` rect would have shown there, so the content scales exactly
+/// as before while the padding and background around the card stay visible.
+fn zoom_within_frame_bounds(
+    card: (XY<f64>, XY<f64>),
+    zoomed: (XY<f64>, XY<f64>),
+    crop: (XY<f64>, XY<f64>),
+) -> ([f32; 4], [f32; 4]) {
+    let (card_start, card_end) = card;
+    let (zoom_start, zoom_end) = zoomed;
+    let (crop_start, crop_end) = crop;
+    let crop_size = crop_end - crop_start;
+    let span = XY::new(
+        (zoom_end.x - zoom_start.x).max(f64::EPSILON),
+        (zoom_end.y - zoom_start.y).max(f64::EPSILON),
+    );
+    let to_crop = |p: XY<f64>| {
+        let f = XY::new(
+            ((p.x - zoom_start.x) / span.x).clamp(0.0, 1.0),
+            ((p.y - zoom_start.y) / span.y).clamp(0.0, 1.0),
+        );
+        crop_start + f * crop_size
+    };
+    // Where the zoomed rect is smaller than the card (zooming out), keep its
+    // own edge so content never stretches past what the recording covers.
+    let target_start = XY::new(
+        card_start.x.max(zoom_start.x),
+        card_start.y.max(zoom_start.y),
+    );
+    let target_end = XY::new(card_end.x.min(zoom_end.x), card_end.y.min(zoom_end.y));
+    let source_start = to_crop(target_start);
+    let source_end = to_crop(target_end);
+    (
+        [
+            target_start.x as f32,
+            target_start.y as f32,
+            target_end.x as f32,
+            target_end.y as f32,
+        ],
+        [
+            source_start.x as f32,
+            source_start.y as f32,
+            source_end.x as f32,
+            source_end.y as f32,
+        ],
+    )
 }
 
 fn zoom_vanishing_point(current: &MotionBounds, previous: &MotionBounds) -> Option<XY<f64>> {
@@ -4549,13 +4598,23 @@ impl ProjectUniforms {
             // Morph the screen toward its split-screen half (and its
             // aspect-matched crop) by the scene's split factor; the normal
             // full-frame rect is untouched when not splitting (split_t == 0).
-            let base_target_bounds = [start.x as f32, start.y as f32, end.x as f32, end.y as f32];
-            let base_crop_bounds = [
-                crop_start.x as f32,
-                crop_start.y as f32,
-                crop_end.x as f32,
-                crop_end.y as f32,
-            ];
+            let (base_target_bounds, base_crop_bounds) = if project.background.zoom_within_frame {
+                zoom_within_frame_bounds(
+                    (display_offset.coord, (display_offset + display_size).coord),
+                    (start.coord, end.coord),
+                    (crop_start.coord, crop_end.coord),
+                )
+            } else {
+                (
+                    [start.x as f32, start.y as f32, end.x as f32, end.y as f32],
+                    [
+                        crop_start.x as f32,
+                        crop_start.y as f32,
+                        crop_end.x as f32,
+                        crop_end.y as f32,
+                    ],
+                )
+            };
             let split_t = split_layout.as_ref().map_or(0.0, |s| s.factor as f32);
             let floating_t = split_layout.as_ref().map_or(0.0, |s| s.floating as f32);
             let split_fade = 1.0 - split_t;
@@ -5301,6 +5360,34 @@ impl ProjectUniforms {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zoom_within_frame_keeps_the_card_and_crops_the_source() {
+        // Card at (100,50)-(1100,650); a 2x zoom centred on the card grows it
+        // to (-400,-250)-(1600,950). Source crop is a 2000x1200 recording.
+        let card = (XY::new(100.0, 50.0), XY::new(1100.0, 650.0));
+        let zoomed = (XY::new(-400.0, -250.0), XY::new(1600.0, 950.0));
+        let crop = (XY::new(0.0, 0.0), XY::new(2000.0, 1200.0));
+        let (target, source) = zoom_within_frame_bounds(card, zoomed, crop);
+        assert_eq!(target, [100.0, 50.0, 1100.0, 650.0]);
+        // The card shows the middle half of the recording on each axis.
+        assert_eq!(source, [500.0, 300.0, 1500.0, 900.0]);
+    }
+
+    #[test]
+    fn zoom_within_frame_leaves_unzoomed_and_zoomed_out_rects_alone() {
+        let card = (XY::new(100.0, 50.0), XY::new(1100.0, 650.0));
+        let crop = (XY::new(0.0, 0.0), XY::new(2000.0, 1200.0));
+        let (target, source) = zoom_within_frame_bounds(card, card, crop);
+        assert_eq!(target, [100.0, 50.0, 1100.0, 650.0]);
+        assert_eq!(source, [0.0, 0.0, 2000.0, 1200.0]);
+
+        // Zooming out shrinks the rect inside the card; it must not stretch.
+        let smaller = (XY::new(350.0, 200.0), XY::new(850.0, 500.0));
+        let (target, source) = zoom_within_frame_bounds(card, smaller, crop);
+        assert_eq!(target, [350.0, 200.0, 850.0, 500.0]);
+        assert_eq!(source, [0.0, 0.0, 2000.0, 1200.0]);
+    }
 
     #[test]
     fn camera_blur_output_rejects_missing_pending_and_failed_masks() {
@@ -7970,6 +8057,7 @@ pub struct RendererLayers {
     cursor: CursorLayer,
     tracker: TrackerLayer,
     lens: LensLayer,
+    fx: FxLayer,
     camera: CameraLayer,
     camera_only: CameraLayer,
     mask: MaskLayer,
@@ -8051,6 +8139,7 @@ impl RendererLayers {
             let tracker =
                 scope.spawn(|| readiness::measure("layers.tracker", || TrackerLayer::new(device)));
             let lens = scope.spawn(|| readiness::measure("layers.lens", || LensLayer::new(device)));
+            let fx = scope.spawn(|| readiness::measure("layers.fx", || FxLayer::new(device)));
             let mask = scope.spawn(|| readiness::measure("layers.mask", || MaskLayer::new(device)));
             let overlays =
                 scope.spawn(|| include_overlays.then(|| OverlayLayers::new(device, queue)));
@@ -8088,6 +8177,7 @@ impl RendererLayers {
                 cursor: join_layer(cursor),
                 tracker: join_layer(tracker),
                 lens: join_layer(lens),
+                fx: join_layer(fx),
                 camera: readiness::measure("layers.camera", || {
                     CameraLayer::new_with_all_shared_pipelines(
                         device,
@@ -8317,6 +8407,7 @@ impl RendererLayers {
         self.background_color_grade
             .prepare(&constants.queue, uniforms);
         self.lens.prepare(&constants.queue, uniforms);
+        self.fx.prepare(&constants.queue, uniforms);
 
         if render_display {
             self.frame.prepare(constants, uniforms);
@@ -8472,6 +8563,7 @@ impl RendererLayers {
         self.background_color_grade
             .prepare(&constants.queue, uniforms);
         self.lens.prepare(&constants.queue, uniforms);
+        self.fx.prepare(&constants.queue, uniforms);
         timings.background_blur_prepare_duration = start.elapsed();
 
         let start = Instant::now();
@@ -8866,6 +8958,15 @@ impl RendererLayers {
         // the camera filming the finished frame.
         if self.lens.is_active() {
             self.lens.render(
+                passes.pass(session.other_texture_view(), clear),
+                device,
+                session.current_texture_view(),
+            );
+            session.swap_textures();
+        }
+        for index in 0..self.fx.pass_count() {
+            self.fx.render_pass(
+                index,
                 passes.pass(session.other_texture_view(), clear),
                 device,
                 session.current_texture_view(),
@@ -9506,6 +9607,89 @@ mod project_uniforms_tests {
             ),
         ];
 
+        let mut variants = variants;
+        use cap_project::{FxDrive, FxNode, FxOp, FxStackConfiguration};
+        let fx_ops = [
+            (FxOp::Pixelate, 0.25, 0.5),
+            (FxOp::Wave, 0.3, 0.3),
+            (FxOp::Mirror, 0.0, 0.0),
+            (FxOp::Kaleidoscope, 0.3, 0.5),
+            (FxOp::Fisheye, 0.8, 0.5),
+            (FxOp::Transform, 0.7, 0.6),
+            (FxOp::RgbSplit, 0.4, 0.0),
+            (FxOp::Blur, 0.3, 0.5),
+            (FxOp::Glow, 0.5, 0.3),
+            (FxOp::Edges, 0.6, 0.0),
+            (FxOp::Levels, 0.7, 0.5),
+            (FxOp::Hue, 0.7, 0.5),
+            (FxOp::Posterize, 0.8, 0.5),
+            (FxOp::Threshold, 0.4, 0.1),
+            (FxOp::Invert, 0.5, 0.5),
+            (FxOp::GradientMap, 0.6, 0.5),
+            (FxOp::Tint, 0.5, 0.3),
+            (FxOp::Dither, 0.3, 0.2),
+            (FxOp::Halftone, 0.3, 0.25),
+            (FxOp::Ascii, 0.3, 1.0),
+            (FxOp::Scanlines, 0.4, 0.1),
+            (FxOp::LedGrid, 0.3, 0.4),
+            (FxOp::Grain, 0.6, 0.2),
+            (FxOp::Vignette, 0.8, 0.5),
+            (FxOp::Glitch, 0.8, 0.4),
+            (FxOp::Tilt, 0.65, 0.3),
+            (FxOp::Orbit, 0.6, 0.5),
+            (FxOp::Dolly, 0.8, 0.5),
+            (FxOp::TiltShift, 0.8, 0.5),
+            (FxOp::Letterbox, 0.6, 1.0),
+            (FxOp::Anamorphic, 0.8, 0.5),
+            (FxOp::Halation, 0.9, 0.5),
+            (FxOp::LightLeak, 0.9, 0.3),
+            (FxOp::FilmGrade, 1.0, 0.6),
+            (FxOp::Lens, 0.8, 0.6),
+        ];
+        for (op, a, b) in fx_ops {
+            let name: &'static str = Box::leak(format!("fx-{op:?}").into_boxed_str());
+            variants.push((
+                name,
+                Box::new(move |p| {
+                    p.fx = FxStackConfiguration {
+                        enabled: true,
+                        nodes: vec![FxNode {
+                            op,
+                            a,
+                            b,
+                            color: [125, 255, 180],
+                            ..Default::default()
+                        }],
+                    };
+                }),
+            ));
+        }
+        variants.push((
+            "fx-chain",
+            Box::new(|p| {
+                p.tracker.enabled = true;
+                let node = |op, a, b, mix| FxNode {
+                    op,
+                    a,
+                    b,
+                    mix,
+                    ..Default::default()
+                };
+                p.fx = FxStackConfiguration {
+                    enabled: true,
+                    nodes: vec![
+                        node(FxOp::GradientMap, 0.6, 0.5, 1.0),
+                        node(FxOp::Glow, 0.45, 0.55, 0.8),
+                        FxNode {
+                            drive: FxDrive::Click,
+                            ..node(FxOp::Glitch, 0.1, 0.4, 1.0)
+                        },
+                        node(FxOp::Scanlines, 0.15, 0.1, 0.6),
+                        node(FxOp::Vignette, 0.45, 0.5, 1.0),
+                    ],
+                };
+            }),
+        ));
         let dump = std::env::var_os("CAPT_FX_DUMP").map(std::path::PathBuf::from);
         let mut plain: Option<Vec<u8>> = None;
         for (name, apply) in variants {

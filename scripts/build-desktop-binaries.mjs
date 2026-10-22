@@ -38,8 +38,15 @@ async function fileExists(p) {
 }
 
 async function main() {
+	const args = process.argv.slice(2);
+	const profileArg = args.find((arg) => arg.startsWith("--profile="));
+	const profile = profileArg
+		? profileArg.slice("--profile=".length)
+		: "release";
 	const target =
-		process.argv[2] || process.env.RUST_TARGET_TRIPLE || detectHostTriple();
+		args.find((arg) => !arg.startsWith("--")) ||
+		process.env.RUST_TARGET_TRIPLE ||
+		detectHostTriple();
 	const ext = target.includes("windows") ? ".exe" : "";
 
 	await fs.mkdir(binariesDir, { recursive: true });
@@ -73,16 +80,16 @@ async function main() {
 			],
 		},
 	]) {
-		await buildSidecar(sidecar, target, ext);
+		await buildSidecar(sidecar, target, ext, profile);
 	}
 }
 
-async function buildSidecar(sidecar, target, ext) {
+async function buildSidecar(sidecar, target, ext, profile) {
 	const src = path.join(
 		repoRoot,
 		"target",
 		target,
-		"release",
+		profile,
 		`${sidecar.sourceBinary}${ext}`,
 	);
 	const dests = sidecar.destBinaries.map((destBinary) =>
@@ -129,11 +136,19 @@ async function buildSidecar(sidecar, target, ext) {
 	}
 
 	console.log(
-		`Building ${sidecar.destBinaries.join(", ")} desktop binaries for ${target}...`,
+		`Building ${sidecar.destBinaries.join(", ")} desktop binaries for ${target} (${profile})...`,
 	);
 	const cargo = spawnSync(
 		"cargo",
-		["build", "--release", "-p", sidecar.packageName, "--target", target],
+		[
+			"build",
+			"--profile",
+			profile,
+			"-p",
+			sidecar.packageName,
+			"--target",
+			target,
+		],
 		{ stdio: "inherit", cwd: repoRoot },
 	);
 	if (cargo.status !== 0) {

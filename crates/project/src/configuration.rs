@@ -372,6 +372,9 @@ pub struct BackgroundConfiguration {
     /// backdrop.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern: Option<crate::BackgroundPatternConfiguration>,
+    /// Zooms magnify the recording inside its padded card instead of growing
+    /// the card over the backdrop, so the background border stays in frame.
+    pub zoom_within_frame: bool,
 }
 
 impl Default for BorderConfiguration {
@@ -402,6 +405,7 @@ impl Default for BackgroundConfiguration {
             frame: None,  // No decorative frame by default
             notch: None,
             pattern: None,
+            zoom_within_frame: true,
         }
     }
 }
@@ -2689,6 +2693,8 @@ pub struct ProjectConfiguration {
     pub lens: crate::LensConfiguration,
     #[serde(default)]
     pub tracker: crate::TrackerConfiguration,
+    #[serde(default)]
+    pub fx: crate::FxStackConfiguration,
 }
 
 pub const TEXT_SIZE_VERSION: u32 = 1;
@@ -2742,6 +2748,7 @@ impl Default for ProjectConfiguration {
             text_anim_version: TEXT_ANIM_VERSION,
             lens: Default::default(),
             tracker: Default::default(),
+            fx: Default::default(),
         }
     }
 }
